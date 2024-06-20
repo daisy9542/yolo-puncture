@@ -2,6 +2,10 @@ import gradio as gr
 import cv2
 import tempfile
 from ultralytics import YOLOv10
+import numpy as np
+import torch
+
+INIT_STEM_LEN = 20
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
@@ -16,6 +20,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         return annotated_image[:, :, ::-1], None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
+        
         with open(video_path, "wb") as f:
             with open(video, "rb") as g:
                 f.write(g.read())
@@ -28,13 +33,34 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         output_video_path = tempfile.mktemp(suffix=".mp4")
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
 
+        pixel_len = -1  # 视频中针梗的长度，以像素为单位
+        count = 0  # 计数器，用于计算针梗的平均实际长度
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
             results = model.predict(source=frame, imgsz=image_size, conf=conf_threshold)
-            annotated_frame = results[0].plot()
+            pred_boxes = results[0].boxes
+            # 若检测到多个物体，取置信度最大的
+            if len(pred_boxes.cls) > 0:
+                best_conf_idx = torch.argmax(pred_boxes.conf)
+                cls, conf = int(pred_boxes.cls[best_conf_idx]), float(pred_boxes.conf[best_conf_idx])
+                name = results[0].names[cls]
+                box = pred_boxes.xyxy[best_conf_idx].squeeze()
+                x1, y1, x2, y2 = box.cpu().numpy()
+                degree = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+                stem_len = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
+                if cls == 0:
+                    pixel_len = pixel_len * count + stem_len
+                    count += 1
+                    pixel_len /= count
+                actual_len = INIT_STEM_LEN if cls == 0 else stem_len / pixel_len * INIT_STEM_LEN
+                label = f"{name} {conf:.2f} {degree:.2f} {actual_len:.2f}mm"
+            else:
+                label = None
+                best_conf_idx = None
+            annotated_frame = results[0].plot(label_content=label, best_conf_idx=best_conf_idx)
             out.write(annotated_frame)
 
         cap.release()
@@ -164,4 +190,4 @@ with gradio_app:
         with gr.Column():
             app()
 if __name__ == '__main__':
-    gradio_app.launch()
+    gradio_app.launch(share=True)
