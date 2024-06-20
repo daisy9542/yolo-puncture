@@ -5,13 +5,17 @@ from ultralytics import YOLOv10
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
-    model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
+    # model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
+    if model_id.endswith("pt"):
+        model = YOLOv10(f'./runs/detect/{model_id}')
+    else:
+        model = YOLOv10.from_pretrained(f'./weights/{model_id}/', local_files_only=True)
     if image:
         results = model.predict(source=image, imgsz=image_size, conf=conf_threshold)
         annotated_image = results[0].plot()
         return annotated_image[:, :, ::-1], None
     else:
-        video_path = tempfile.mktemp(suffix=".webm")
+        video_path = tempfile.mktemp(suffix=".mp4")
         with open(video_path, "wb") as f:
             with open(video, "rb") as g:
                 f.write(g.read())
@@ -21,8 +25,8 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        output_video_path = tempfile.mktemp(suffix=".webm")
-        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'vp80'), fps, (frame_width, frame_height))
+        output_video_path = tempfile.mktemp(suffix=".mp4")
+        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -58,6 +62,8 @@ def app():
                 model_id = gr.Dropdown(
                     label="Model",
                     choices=[
+                        "train16/weights/best.pt",
+                        "train16/weights/last.pt",
                         "yolov10n",
                         "yolov10s",
                         "yolov10m",
@@ -65,7 +71,7 @@ def app():
                         "yolov10l",
                         "yolov10x",
                     ],
-                    value="yolov10m",
+                    value="train16/weights/best.pt",
                 )
                 image_size = gr.Slider(
                     label="Image Size",
@@ -79,7 +85,7 @@ def app():
                     minimum=0.0,
                     maximum=1.0,
                     step=0.05,
-                    value=0.25,
+                    value=0.35,
                 )
                 yolov10_infer = gr.Button(value="Detect Objects")
 
