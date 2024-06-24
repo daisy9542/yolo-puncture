@@ -33,8 +33,6 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         output_video_path = tempfile.mktemp(suffix=".mp4")
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
-        # 保存上一帧的关键点
-        prev_points = None
         prev_gray = None
         prev_frame = None
         
@@ -47,12 +45,10 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
             
             # 将帧转换为灰度图像
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            mask = np.zeros_like(frame)
             
             results = model.predict(source=frame, imgsz=image_size, conf=conf_threshold)
             pred_boxes = results[0].boxes
-            
-            # 初始化 mask 用于绘制轨迹
-            mask = np.zeros_like(frame)
             
             if len(pred_boxes.cls) > 0:
                 # 若检测到多个物体，取置信度最大的
@@ -70,39 +66,15 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                 actual_len = INIT_STEM_LEN if cls == 0 else stem_len / pixel_len * INIT_STEM_LEN
                 label = f"{name} {conf:.2f} {degree:.2f} {actual_len:.2f}mm"
                 
-                # 提取感兴趣的区域
                 x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
-                roi = frame[y1:y2, x1:x2]
-                roi_gray = gray[y1:y2, x1:x2]
                 
-                # LK 光流法
-                if prev_gray is not None and prev_points is not None:
-                    lk_params = dict(winSize=(7, 7), maxLevel=1,
-                                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
-                                     flags=0,
-                                     minEigThreshold=1e-4)
-                    next_points, status, error = cv2.calcOpticalFlowPyrLK(
-                        prev_gray[y1:y2, x1:x2], roi_gray,
-                        prev_points, None, **lk_params)
-                    # 筛选有效的光流点
-                    good_new = next_points[status == 1]
-                    good_old = prev_points[status == 1]
-                    # 绘制轨迹
-                    for i, (new, old) in enumerate(zip(good_new, good_old)):
-                        a, b = new.ravel()
-                        c, d = old.ravel()
-                        a, b, c, d = map(int, [a, b, c, d])
-                        a += x1  # 恢复到原图中的位置
-                        b += y1
-                        c += x1
-                        d += y1
-                        mask = cv2.line(mask, (a, b), (c, d), (0, 255, 0), 2)
-                        frame = cv2.circle(frame, (a, b), 5, (0, 255, 0), -1)
-                # 更新上一帧的关键点和灰度图像
-                prev_points = cv2.goodFeaturesToTrack(roi_gray, mask=None, maxCorners=100, qualityLevel=0.3,
-                                                      minDistance=7, blockSize=7)
-                if prev_points is not None:
-                    prev_points = prev_points.astype(np.float32)
+                if prev_gray is not None:
+                    # Farneback 光流法
+                    flow = cv2.calcOpticalFlowFarneback(
+                        prev_gray, gray, None, 0.5,
+                        3, 15, 3, 5, 1.2, 0)
+                    mask = draw_dense_flow(frame, flow)
+                
                 prev_gray = gray.copy()
             else:
                 label = None
@@ -120,6 +92,56 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
 def yolov10_inference_for_examples(image, model_path, image_size, conf_threshold):
     annotated_image, _ = yolov10_inference(image, None, model_path, image_size, conf_threshold)
     return annotated_image
+
+
+def draw_flow(img, flow, step=16):
+    """在图像上绘制光流矢量箭头，可以直接展示物体的移动方向和幅度。
+    这种方法通常用于对光流场的视觉分析。"""
+    h, w = img.shape[:2]
+    y, x = np.mgrid[step // 2:h:step, step // 2:w:step].reshape(2, -1)
+    fx, fy = flow[y, x].T
+    lines = np.vstack([x, y, x + fx, y + fy]).T.reshape(-1, 2, 2)
+    lines = np.int32(lines)
+    vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    for (x1, y1), (x2, y2) in lines:
+        cv2.arrowedLine(vis, (x1, y1), (x2, y2), (0, 255, 0), 1, tipLength=0.3)
+    return vis
+
+
+def draw_hsv(flow):
+    """将光流矢量转换为色相（Hue）和强度（Intensity），然后用颜色编码显示，
+    这种方法可以用来分析整个图像的运动情况。"""
+    h, w = flow.shape[:2]
+    fx, fy = flow[..., 0], flow[..., 1]
+    ang = np.arctan2(fy, fx) + np.pi
+    mag, ang = cv2.cartToPolar(fx, fy)
+    hsv = np.zeros((h, w, 3), np.uint8)
+    hsv[..., 0] = ang * 180 / np.pi / 2
+    hsv[..., 1] = 255
+    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    return bgr
+
+
+def draw_dense_flow(img, flow):
+    """使用稠密光流箭头绘制每个像素的光流矢量，通过绘制箭头可以观察到局部运动的方向和速度。"""
+    h, w = img.shape[:2]
+    vis = np.zeros((h, w, 3), np.uint8)
+    for y in range(0, h, 10):
+        for x in range(0, w, 10):
+            fx, fy = flow[y, x]
+            cv2.arrowedLine(vis, (x, y), (int(x + fx), int(y + fy)), (0, 255, 0), 1, tipLength=0.3)
+    return vis
+
+
+def draw_direction(flow):
+    """将光流矢量转换为图像的亮度，并显示不同方向的光流，用于查看图像中不同区域的运动趋势。"""
+    fx, fy = flow[..., 0], flow[..., 1]
+    ang = np.arctan2(fy, fx) + np.pi
+    magnitude, angle = cv2.cartToPolar(fx, fy)
+    direction = np.uint8(ang * 180 / np.pi / 2)
+    direction = cv2.applyColorMap(direction, cv2.COLORMAP_HSV)
+    return direction
 
 
 def app():
