@@ -5,7 +5,7 @@ from ultralytics import YOLOv10
 import numpy as np
 import torch
 
-INIT_STEM_LEN = 20
+INIT_STEM_LEN = 20  # 针梗的实际长度，单位为毫米
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
@@ -33,9 +33,6 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         output_video_path = tempfile.mktemp(suffix=".mp4")
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
-        prev_gray = None
-        prev_frame = None
-        
         pixel_len = -1  # 视频中针梗的长度，以像素为单位
         count = 0  # 计数器，用于计算针梗的平均实际长度
         while cap.isOpened():
@@ -58,24 +55,35 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                 xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
                 x1, y1, x2, y2 = xyxy.cpu().numpy()
                 degree = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                stem_len = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
+                shaft_pixel_len = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
                 if cls == 0:
-                    pixel_len = pixel_len * count + stem_len
+                    pixel_len = pixel_len * count + shaft_pixel_len
                     count += 1
                     pixel_len /= count
-                actual_len = INIT_STEM_LEN if cls == 0 else stem_len / pixel_len * INIT_STEM_LEN
-                label = f"{name} {conf:.2f} {degree:.2f} {actual_len:.2f}mm"
+                actual_len = INIT_STEM_LEN if cls == 0 else shaft_pixel_len / pixel_len * INIT_STEM_LEN
+                label = f"{name} {conf:.2f} {degree:.2f} {actual_len:.2f} -"
                 
                 x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
-                
-                if prev_gray is not None:
-                    # Farneback 光流法
-                    flow = cv2.calcOpticalFlowFarneback(
-                        prev_gray, gray, None, 0.5,
-                        3, 15, 3, 5, 1.2, 0)
-                    mask = draw_dense_flow(frame, flow)
-                
-                prev_gray = gray.copy()
+                # 二值化感兴趣的区域
+                roi_gray = gray[y1:y2, x1:x2]
+                _, binary_roi = cv2.threshold(roi_gray, 127, 255, cv2.THRESH_BINARY)
+                # 检测连通组件
+                num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_roi)
+                if num_labels > 1:
+                    # 找到针的连通组件
+                    max_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_WIDTH])
+                    needle_mask = (labels == max_label).astype(np.uint8) * 255
+                    coords = np.column_stack(np.where(needle_mask > 0))
+                    ((center_x, center_y), (width, height), angle) = cv2.minAreaRect(coords)
+                    min_rect = ((center_y, center_x), (width, height), 90 - angle)
+                    box = cv2.boxPoints(min_rect)
+                    box = np.intp(box)
+                    bi_shaft_pixel_len = max(min_rect[1])
+                    label = f"{name} {conf:.2f} {degree:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f}"
+                    
+                    # 在原图上绘制针梗轮廓
+                    mask[y1:y2, x1:x2] = cv2.cvtColor(needle_mask, cv2.COLOR_GRAY2BGR)
+                    cv2.drawContours(frame, [box + [x1, y1]], 0, (0, 255, 0), 2)
             else:
                 label = None
                 best_conf_idx = None
