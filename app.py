@@ -6,6 +6,8 @@ import numpy as np
 import torch
 
 INIT_STEM_LEN = 20  # 针梗的实际长度，单位为毫米
+MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
+CONFIRMATION_FRAMES = 5  # 连续几帧确认插入状态
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
@@ -35,6 +37,13 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         
         pixel_len = -1  # 视频中针梗的长度，以像素为单位
         count = 0  # 计数器，用于计算针梗的平均实际长度
+        insert_counter = 0  # 连续插入计数器
+        insert_spec_counter = 0  # 判断插入皮肤超出长度计数器
+        inserted = False  # 是否插入皮肤（只判断初始固定距离）
+        insert_start, insert_spec_end = None, None  # 记录插入皮肤的开始和指定结束时间
+        insert_start_frame, insert_spec_end_frame = None, None  # 记录插入皮肤的开始和指定结束所在帧
+        spec_insert_speed = None  # 插入皮肤指定长度的速度
+        speed_clac_compute = False
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -61,7 +70,31 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                     count += 1
                     pixel_len /= count
                 actual_len = INIT_STEM_LEN if cls == 0 else shaft_pixel_len / pixel_len * INIT_STEM_LEN
-                label = f"{name} {conf:.2f} {degree:.2f} {actual_len:.2f} -"
+                
+                # 判断是否开始插入皮肤
+                if cls == 1 and not inserted and not speed_clac_compute:
+                    insert_counter += 1
+                    if insert_counter >= CONFIRMATION_FRAMES:
+                        inserted = True
+                        insert_start = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        insert_start_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                
+                # 判断是否插入皮肤达到指定长度
+                if cls == 1 and inserted and actual_len <= INIT_STEM_LEN - MOVE_THRESHOLD:
+                    insert_spec_counter += 1
+                    if insert_spec_counter >= CONFIRMATION_FRAMES:
+                        insert_spec_counter = 0
+                        insert_counter = 0
+                        inserted = False
+                        speed_clac_compute = True
+                        insert_spec_end = cap.get(cv2.CAP_PROP_POS_MSEC)
+                        spec_insert_speed = 1000 * MOVE_THRESHOLD / (insert_spec_end - insert_start)
+                        insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                
+                if speed_clac_compute:
+                    label = f"{name} {conf:.2f} {actual_len:.2f} - {spec_insert_speed:.2f}mm/s"
+                else:
+                    label = f"{name} {conf:.2f} {actual_len:.2f} -"
                 
                 x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
                 # 二值化感兴趣的区域
@@ -79,7 +112,10 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                     box = cv2.boxPoints(min_rect)
                     box = np.intp(box)
                     bi_shaft_pixel_len = max(min_rect[1])
-                    label = f"{name} {conf:.2f} {degree:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f}"
+                    if speed_clac_compute:
+                        label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} {spec_insert_speed:.2f}mm/s"
+                    else:
+                        label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f}"
                     
                     # 在原图上绘制针梗轮廓
                     mask[y1:y2, x1:x2] = cv2.cvtColor(needle_mask, cv2.COLOR_GRAY2BGR)
@@ -93,6 +129,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         
         cap.release()
         out.release()
+        print("Start: ", insert_start_frame, " End: ", insert_spec_end_frame)
         
         return None, output_video_path
 
