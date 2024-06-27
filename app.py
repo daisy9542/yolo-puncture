@@ -193,8 +193,8 @@ def app():
     with gr.Blocks():
         with gr.Row():
             with gr.Column():
-                image = gr.Image(type="pil", label="Image", visible=True)
-                video = gr.Video(label="Video", visible=False)
+                image = gr.Image(type="pil", label="Image", visible=False)
+                video = gr.Video(label="Video", visible=True)
                 input_type = gr.Radio(
                     choices=["Image", "Video"],
                     value="Video",
@@ -231,8 +231,8 @@ def app():
                 yolov10_infer = gr.Button(value="Detect Objects")
             
             with gr.Column():
-                output_image = gr.Image(type="numpy", label="Annotated Image", visible=True)
-                output_video = gr.Video(label="Annotated Video", visible=False)
+                output_image = gr.Image(type="numpy", label="Annotated Image", visible=False)
+                output_video = gr.Video(label="Annotated Video", visible=True)
         
         def update_visibility(input_type):
             image = gr.update(visible=True) if input_type == "Image" else gr.update(visible=False)
