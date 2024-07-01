@@ -13,7 +13,7 @@ CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
     # model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
     if model_id.endswith("pt"):
-        model = YOLOv10(f'./runs/detect/{model_id}')
+        model = YOLOv10(f'./weights/{model_id}')
     else:
         model = YOLOv10.from_pretrained(f'./weights/{model_id}/', local_files_only=True)
     if image:
@@ -205,8 +205,8 @@ def app():
                 model_id = gr.Dropdown(
                     label="Model",
                     choices=[
-                        "train16/weights/best.pt",
-                        "train16/weights/last.pt",
+                        "puncture_init/best.pt",
+                        "puncture_init/last.pt",
                         "yolov10n",
                         "yolov10s",
                         "yolov10m",
@@ -214,7 +214,7 @@ def app():
                         "yolov10l",
                         "yolov10x",
                     ],
-                    value="train16/weights/best.pt",
+                    value="puncture_init/best.pt",
                 )
                 image_size = gr.Slider(
                     label="Image Size",
