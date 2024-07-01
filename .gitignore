@@ -169,3 +169,5 @@ pnnx*
 /datasets/*
 /weights/*
 /runs/*
+
+extracted_frames/
