@@ -5,9 +5,9 @@ from ultralytics import YOLOv10
 import numpy as np
 import torch
 
-INIT_STEM_LEN = 20  # 针梗的实际长度，单位为毫米
+INIT_SHAFT_LEN = 20  # 针梗的实际长度，单位为毫米
 MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
-CONFIRMATION_FRAMES = 5  # 连续几帧确认插入状态
+CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
@@ -35,8 +35,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         output_video_path = tempfile.mktemp(suffix=".mp4")
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
-        pixel_len = -1  # 视频中针梗的长度，以像素为单位
-        count = 0  # 计数器，用于计算针梗的平均实际长度
+        pixel_len_arr = []  # 视频中针梗的长度，以像素为单位
         insert_counter = 0  # 连续插入计数器
         insert_spec_counter = 0  # 判断插入皮肤超出长度计数器
         inserted = False  # 是否插入皮肤（只判断初始固定距离）
@@ -63,13 +62,16 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                 name = results[0].names[cls]
                 xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
                 x1, y1, x2, y2 = xyxy.cpu().numpy()
-                degree = np.degrees(np.arctan2(y2 - y1, x2 - x1))
                 shaft_pixel_len = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
-                if cls == 0:
-                    pixel_len = pixel_len * count + shaft_pixel_len
-                    count += 1
-                    pixel_len /= count
-                actual_len = INIT_STEM_LEN if cls == 0 else shaft_pixel_len / pixel_len * INIT_STEM_LEN
+                if cls == 0 and not inserted:
+                    pixel_len_arr.append(shaft_pixel_len)
+                    if len(pixel_len_arr) > CONFIRMATION_FRAMES:
+                        pixel_len_arr.pop(0)
+                if cls == 1 and len(pixel_len_arr) == 0:
+                    # 第一帧就检测到插入皮肤的情况
+                    pixel_len_arr.append(shaft_pixel_len)
+                actual_len = INIT_SHAFT_LEN if cls == 0 else (
+                        INIT_SHAFT_LEN * shaft_pixel_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
                 
                 # 判断是否开始插入皮肤
                 if cls == 1 and not inserted and not speed_clac_compute:
@@ -80,7 +82,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                         insert_start_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
                 
                 # 判断是否插入皮肤达到指定长度
-                if cls == 1 and inserted and actual_len <= INIT_STEM_LEN - MOVE_THRESHOLD:
+                if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
                     insert_spec_counter += 1
                     if insert_spec_counter >= CONFIRMATION_FRAMES:
                         insert_spec_counter = 0
@@ -92,7 +94,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                         insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
                 
                 if speed_clac_compute:
-                    label = f"{name} {conf:.2f} {actual_len:.2f} - {spec_insert_speed:.2f}mm/s"
+                    label = f"{name} {conf:.2f} {actual_len:.2f} {spec_insert_speed:.2f}mm/s"
                 else:
                     label = f"{name} {conf:.2f} {actual_len:.2f} -"
                 
@@ -112,10 +114,10 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                     box = cv2.boxPoints(min_rect)
                     box = np.intp(box)
                     bi_shaft_pixel_len = max(min_rect[1])
-                    if speed_clac_compute:
-                        label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} {spec_insert_speed:.2f}mm/s"
-                    else:
-                        label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f}"
+                    # if speed_clac_compute:
+                    #     label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} {spec_insert_speed:.2f}mm/s"
+                    # else:
+                    #     label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} -"
                     
                     # 在原图上绘制针梗轮廓
                     mask[y1:y2, x1:x2] = cv2.cvtColor(needle_mask, cv2.COLOR_GRAY2BGR)
