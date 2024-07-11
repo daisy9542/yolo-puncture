@@ -205,6 +205,7 @@ def app():
                 model_id = gr.Dropdown(
                     label="Model",
                     choices=[
+                        "v10x_finetune/best.pt",
                         "puncture_init/best.pt",
                         "puncture_init/last.pt",
                         "yolov10n",
@@ -214,7 +215,7 @@ def app():
                         "yolov10l",
                         "yolov10x",
                     ],
-                    value="puncture_init/best.pt",
+                    value="v10x_finetune/best.pt",
                 )
                 image_size = gr.Slider(
                     label="Image Size",

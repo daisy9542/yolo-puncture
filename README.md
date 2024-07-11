@@ -179,3 +179,8 @@ If our code or models help your work, please cite our paper:
   year={2024}
 }
 ```
+
+
+## 4090上训练
+
+nohup python finetune.py > ./logs/20240710_train.log 2>&1 &
