@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 # 视频路径
-video_path = "/Users/daisy/Projects/MachineLearning/CV/yolov10/datasets/needle/videos/video3.mp4"
+video_path = "datasets/videos/video19.mp4"
 # 保存图片的文件夹
 image_folder = f"extracted_frames/{os.path.basename(video_path)[:-4]}"
 os.makedirs(image_folder, exist_ok=True)
