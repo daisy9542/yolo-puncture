@@ -1,25 +1,39 @@
 import gradio as gr
 import cv2
 import tempfile
+
+from PIL import Image
+
 from ultralytics import YOLOv10
 import numpy as np
 import torch
+import io
+import matplotlib.pyplot as plt
+from utils.segment_everything import show_anns, segment
 
 INIT_SHAFT_LEN = 20  # 针梗的实际长度，单位为毫米
 MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
 CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
+OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 
 
 def yolov10_inference(image, video, model_id, image_size, conf_threshold):
     # model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
     if model_id.endswith("pt"):
-        model = YOLOv10(f'./weights/{model_id}')
+        model = YOLOv10(f'{model_id}')
     else:
-        model = YOLOv10.from_pretrained(f'./weights/{model_id}/', local_files_only=True)
+        model = YOLOv10.from_pretrained(f'{model_id}/', local_files_only=True)
     if image:
         results = model.predict(source=image, imgsz=image_size, conf=conf_threshold)
         annotated_image = results[0].plot()
-        return annotated_image[:, :, ::-1], None
+        
+        image_darray = np.array(image)
+        masks = segment(image_darray)
+        masks = filter_masks(masks, (0, 0, image_darray.shape[1], image_darray.shape[0]))
+        print(masks)
+        img_with_masks = draw_masks_on_image(image, masks)
+        # return annotated_image[:, :, ::-1], None
+        return img_with_masks, None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
         
@@ -48,9 +62,9 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
             if not ret:
                 break
             
-            # 将帧转换为灰度图像
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mask = np.zeros_like(frame)
+            roi_mask = np.zeros_like(frame)
             
             results = model.predict(source=frame, imgsz=image_size, conf=conf_threshold)
             pred_boxes = results[0].boxes
@@ -61,9 +75,27 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                 cls, conf = int(pred_boxes.cls[best_conf_idx]), float(pred_boxes.conf[best_conf_idx])
                 name = results[0].names[cls]
                 xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
-                x1, y1, x2, y2 = xyxy.cpu().numpy()
-                shaft_pixel_len = np.sqrt((y2 - y1)**2 + (x2 - x1)**2)
-                if cls == 0 and not inserted:
+                x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
+                shaft_pixel_len = (x2 - x1) * (y2 - y1)  # 针梗的像素长度
+                
+                # 针梗分割
+                if not speed_clac_compute:
+                    height, width, _ = frame.shape
+                    x1 = max(0, x1 - OUT_EXPAND)
+                    y1 = max(0, y1 - OUT_EXPAND)
+                    x2 = min(width, x2 + OUT_EXPAND)
+                    y2 = min(height, y2 + OUT_EXPAND)
+                    roi = rgb_frame[y1:y2, x1:x2]
+                    masks = segment(roi)
+                    masks = filter_masks(masks, (x1, y1, x2, y2))
+                    # TODO: masks 长度可能为 0
+                    if len(masks) == 0:
+                        continue
+                    mask = show_anns(frame.shape, masks, x1, y1)
+                    _, _, w, h = masks[0]['bbox']
+                    shaft_pixel_len = np.sqrt(w**2 + h**2)
+                
+                if cls == 0 and not inserted and shaft_pixel_len is not None:
                     pixel_len_arr.append(shaft_pixel_len)
                     if len(pixel_len_arr) > CONFIRMATION_FRAMES:
                         pixel_len_arr.pop(0)
@@ -94,39 +126,14 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                         insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
                 
                 if speed_clac_compute:
-                    label = f"{name} {conf:.2f} {actual_len:.2f} {spec_insert_speed:.2f}mm/s"
+                    label = f"{name} {conf:.2f} {spec_insert_speed:.2f}mm/s"
                 else:
-                    label = f"{name} {conf:.2f} {actual_len:.2f} -"
+                    label = f"{name} {conf:.2f} {actual_len:.2f} {shaft_pixel_len:.2f}"
                 
-                x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
-                # 二值化感兴趣的区域
-                roi_gray = gray[y1:y2, x1:x2]
-                _, binary_roi = cv2.threshold(roi_gray, 127, 255, cv2.THRESH_BINARY)
-                # 检测连通组件
-                num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_roi)
-                if num_labels > 1:
-                    # 找到针的连通组件
-                    max_label = 1 + np.argmax(stats[1:, cv2.CC_STAT_WIDTH])
-                    needle_mask = (labels == max_label).astype(np.uint8) * 255
-                    coords = np.column_stack(np.where(needle_mask > 0))
-                    ((center_x, center_y), (width, height), angle) = cv2.minAreaRect(coords)
-                    min_rect = ((center_y, center_x), (width, height), 90 - angle)
-                    box = cv2.boxPoints(min_rect)
-                    box = np.intp(box)
-                    bi_shaft_pixel_len = max(min_rect[1])
-                    # if speed_clac_compute:
-                    #     label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} {spec_insert_speed:.2f}mm/s"
-                    # else:
-                    #     label = f"{name} {conf:.2f} {shaft_pixel_len:.2f} {bi_shaft_pixel_len:.2f} -"
-                    
-                    # 在原图上绘制针梗轮廓
-                    mask[y1:y2, x1:x2] = cv2.cvtColor(needle_mask, cv2.COLOR_GRAY2BGR)
-                    cv2.drawContours(frame, [box + [x1, y1]], 0, (0, 255, 0), 2)
-            else:
-                label = None
-                best_conf_idx = None
-            annotated_frame = results[0].plot(label_content=label, best_conf_idx=best_conf_idx)
-            combined_frame = cv2.addWeighted(annotated_frame, 1, mask, 1, 0)
+                roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
+            # annotated_frame = results[0].plot(label_content=label, best_conf_idx=best_conf_idx)
+            combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
+            combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
             out.write(combined_frame)
         
         cap.release()
@@ -141,54 +148,112 @@ def yolov10_inference_for_examples(image, model_path, image_size, conf_threshold
     return annotated_image
 
 
-def draw_flow(img, flow, step=16):
-    """在图像上绘制光流矢量箭头，可以直接展示物体的移动方向和幅度。
-    这种方法通常用于对光流场的视觉分析。"""
-    h, w = img.shape[:2]
-    y, x = np.mgrid[step // 2:h:step, step // 2:w:step].reshape(2, -1)
-    fx, fy = flow[y, x].T
-    lines = np.vstack([x, y, x + fx, y + fy]).T.reshape(-1, 2, 2)
-    lines = np.int32(lines)
-    vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    for (x1, y1), (x2, y2) in lines:
-        cv2.arrowedLine(vis, (x1, y1), (x2, y2), (0, 255, 0), 1, tipLength=0.3)
-    return vis
+def draw_masks_on_image(image, masks):
+    plt.figure(figsize=(10, 10))
+    plt.imshow(image)
+    # show_anns(np.array(image).shape,masks)
+    if len(masks) == 0:
+        return
+    sorted_anns = sorted(masks, key=(lambda x: x['area']), reverse=True)
+    ax = plt.gca()
+    ax.set_autoscale_on(False)
+    
+    img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
+    img[:, :, 3] = 0
+    for ann in sorted_anns:
+        m = ann['segmentation']
+        color_mask = np.concatenate([np.random.random(3), [0.35]])
+        img[m] = color_mask
+        # 获取遮罩的中心位置
+        y_coords, x_coords = np.where(m)
+        y_center = np.mean(y_coords)
+        x_center = np.mean(x_coords)
+        
+        # 在遮罩中心位置附近添加面积标签
+        ax.text(x_center, y_center, f"{ann['area']:.1f}", color='white', fontsize=12, ha='center', va='center')
+    ax.imshow(img)
+    ax.imshow(img)
+    plt.axis('off')
+    
+    # 将图像保存到内存中，并转换为NumPy数组
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    img_with_masks = np.array(Image.open(buf))
+    
+    plt.close()
+    return img_with_masks
 
 
-def draw_hsv(flow):
-    """将光流矢量转换为色相（Hue）和强度（Intensity），然后用颜色编码显示，
-    这种方法可以用来分析整个图像的运动情况。"""
-    h, w = flow.shape[:2]
-    fx, fy = flow[..., 0], flow[..., 1]
-    ang = np.arctan2(fy, fx) + np.pi
-    mag, ang = cv2.cartToPolar(fx, fy)
-    hsv = np.zeros((h, w, 3), np.uint8)
-    hsv[..., 0] = ang * 180 / np.pi / 2
-    hsv[..., 1] = 255
-    hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
-    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-    return bgr
+def create_roi_mask(frame_shape, x1, y1, x2, y2, label):
+    """
+    在指定的 ROI 区域内绘制一个蓝色框，并在框上方显示标签内容。
+
+    参数：
+    frame_shape (tuple): 原始图像的形状。
+    x1, y1, x2, y2 (int): ROI区域的边界框坐标。
+    label (str): 要显示的标签内容。
+
+    返回：
+    np.ndarray: 带有蓝色框和标签的mask数组。
+    """
+    height, width, _ = frame_shape
+    mask = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    color = (0, 0, 255)
+    thickness = 2
+    cv2.rectangle(mask, (x1, y1), (x2, y2), color, thickness)
+    
+    # 在框上方显示标签内容
+    font = cv2.FONT_HERSHEY_COMPLEX
+    font_scale = 1
+    font_thickness = 2
+    text_size = cv2.getTextSize(label, font, font_scale, font_thickness)[0]
+    text_x = x1
+    text_y = y1 - 10 if y1 - 10 > 10 else y1 + 10 + text_size[1]
+    if label:
+        cv2.putText(mask, label, (text_x, text_y), font, font_scale, color, font_thickness, cv2.LINE_AA)
+    
+    return mask
 
 
-def draw_dense_flow(img, flow):
-    """使用稠密光流箭头绘制每个像素的光流矢量，通过绘制箭头可以观察到局部运动的方向和速度。"""
-    h, w = img.shape[:2]
-    vis = np.zeros((h, w, 3), np.uint8)
-    for y in range(0, h, 10):
-        for x in range(0, w, 10):
-            fx, fy = flow[y, x]
-            cv2.arrowedLine(vis, (x, y), (int(x + fx), int(y + fy)), (0, 255, 0), 1, tipLength=0.3)
-    return vis
+def filter_masks(masks, roi):
+    """
+    过滤掉不符合特定条件的遮罩（masks）。
 
+    参数：
+    masks (list): 包含遮罩信息的字典列表，每个字典包含 'bbox' 键和相应的边界框信息。
+    roi (tuple): 感兴趣区域的边界框，以 (x1, y1, x2, y2) 格式表示。
 
-def draw_direction(flow):
-    """将光流矢量转换为图像的亮度，并显示不同方向的光流，用于查看图像中不同区域的运动趋势。"""
-    fx, fy = flow[..., 0], flow[..., 1]
-    ang = np.arctan2(fy, fx) + np.pi
-    magnitude, angle = cv2.cartToPolar(fx, fy)
-    direction = np.uint8(ang * 180 / np.pi / 2)
-    direction = cv2.applyColorMap(direction, cv2.COLORMAP_HSV)
-    return direction
+    返回：
+    list: 过滤后的遮罩列表。
+    """
+    x1_roi, y1_roi, x2_roi, y2_roi = roi
+    width_roi = x2_roi - x1_roi
+    height_roi = y2_roi - y1_roi
+    
+    filtered_masks = []
+    for mask in masks:
+        x, y, w, h = mask['bbox']
+        area = mask['area']
+        if x == 0 or y == 0 or w == height_roi or h == width_roi:
+            continue
+        x += x1_roi
+        y += y1_roi
+        # 检查边界框是否在 ROI 的左半部分或右半部分之外
+        if x > x1_roi + width_roi / 2:
+            continue
+        if x + w < x2_roi - width_roi / 2:
+            continue
+        # 检查边界框是否包含了 ROI 边框部分
+        if x < x1_roi or x + w > x2_roi or y < y1_roi or y + h > y2_roi:
+            continue
+        # 检查面积是否小于 200 像素
+        if area < 300 or area > 1500:
+            continue
+        filtered_masks.append(mask)
+    
+    return filtered_masks
 
 
 def app():
@@ -205,9 +270,9 @@ def app():
                 model_id = gr.Dropdown(
                     label="Model",
                     choices=[
+                        "v10_remark/best.pt",
                         "v10x_finetune/best.pt",
                         "puncture_init/best.pt",
-                        "puncture_init/last.pt",
                         "yolov10n",
                         "yolov10s",
                         "yolov10m",
@@ -215,7 +280,7 @@ def app():
                         "yolov10l",
                         "yolov10x",
                     ],
-                    value="v10x_finetune/best.pt",
+                    value="v10_remark/best.pt",
                 )
                 image_size = gr.Slider(
                     label="Image Size",
