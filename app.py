@@ -17,22 +17,29 @@ CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 
 
-def yolov10_inference(image, video, model_id, image_size, conf_threshold):
-    # model = YOLOv10.from_pretrained(f'jameslahm/{model_id}')
-    if model_id.endswith("pt"):
-        model = YOLOv10(f'{model_id}')
+def yolov10_inference(image, video,
+                      yolo_model_id,
+                      segment_model_id,
+                      classify_model_id,
+                      image_size,
+                      yolo_conf_threshold,
+                      classify_conf_threshold):
+    if yolo_model_id.endswith("pt"):
+        model = YOLOv10(f'{yolo_model_id}')
     else:
-        model = YOLOv10.from_pretrained(f'{model_id}/', local_files_only=True)
+        model = YOLOv10.from_pretrained(f'{yolo_model_id}/', local_files_only=True)
     if image:
-        results = model.predict(source=image, imgsz=image_size, conf=conf_threshold)
+        results = model.predict(source=image, imgsz=image_size, conf=yolo_conf_threshold)
         annotated_image = results[0].plot()
         
         image_darray = np.array(image)
-        masks = segment(image_darray)
+        masks = segment(image_darray, segment_model_id)
         masks = filter_masks(masks, (0, 0, image_darray.shape[1], image_darray.shape[0]))
         print(masks)
-        img_with_masks = draw_masks_on_image(image, masks)
-        # return annotated_image[:, :, ::-1], None
+        if len(masks) > 0:
+            img_with_masks = draw_masks_on_image(image, masks)
+        else:
+            img_with_masks = image
         return img_with_masks, None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
@@ -66,7 +73,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
             mask = np.zeros_like(frame)
             roi_mask = np.zeros_like(frame)
             
-            results = model.predict(source=frame, imgsz=image_size, conf=conf_threshold)
+            results = model.predict(source=frame, imgsz=image_size, conf=yolo_conf_threshold)
             pred_boxes = results[0].boxes
             
             if len(pred_boxes.cls) > 0:
@@ -86,7 +93,7 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
                     x2 = min(width, x2 + OUT_EXPAND)
                     y2 = min(height, y2 + OUT_EXPAND)
                     roi = rgb_frame[y1:y2, x1:x2]
-                    masks = segment(roi)
+                    masks = segment(roi, segment_model_id)
                     masks = filter_masks(masks, (x1, y1, x2, y2))
                     # TODO: masks 长度可能为 0
                     if len(masks) == 0:
@@ -141,11 +148,6 @@ def yolov10_inference(image, video, model_id, image_size, conf_threshold):
         print("Start: ", insert_start_frame, " End: ", insert_spec_end_frame)
         
         return None, output_video_path
-
-
-def yolov10_inference_for_examples(image, model_path, image_size, conf_threshold):
-    annotated_image, _ = yolov10_inference(image, None, model_path, image_size, conf_threshold)
-    return annotated_image
 
 
 def draw_masks_on_image(image, masks):
@@ -267,20 +269,30 @@ def app():
                     value="Video",
                     label="Input Type",
                 )
-                model_id = gr.Dropdown(
-                    label="Model",
+                yolo_model_id = gr.Dropdown(
+                    label="YOLO Model",
                     choices=[
                         "v10_remark/best.pt",
                         "v10x_finetune/best.pt",
                         "puncture_init/best.pt",
-                        "yolov10n",
-                        "yolov10s",
-                        "yolov10m",
-                        "yolov10b",
-                        "yolov10l",
-                        "yolov10x",
                     ],
                     value="v10_remark/best.pt",
+                )
+                segment_model_id = gr.Dropdown(
+                    label="Segment Model",
+                    choices=[
+                        "vit_h",
+                        "vit_l",
+                        "vit_b",
+                    ],
+                    value="vit_l",
+                )
+                classify_model_id = gr.Dropdown(
+                    label="Classify Model",
+                    choices=[
+                        "EfficientNet_23",
+                    ],
+                    value="EfficientNet_23"
                 )
                 image_size = gr.Slider(
                     label="Image Size",
@@ -289,12 +301,19 @@ def app():
                     step=32,
                     value=640,
                 )
-                conf_threshold = gr.Slider(
+                yolo_conf_threshold = gr.Slider(
                     label="Confidence Threshold",
                     minimum=0.0,
                     maximum=1.0,
                     step=0.05,
                     value=0.35,
+                )
+                classify_conf_threshold = gr.Slider(
+                    label="Classify Confidence Threshold",
+                    minimum=0.7,
+                    maximum=1,
+                    step=0.05,
+                    value=0.9,
                 )
                 yolov10_infer = gr.Button(value="Detect Objects")
             
@@ -316,42 +335,42 @@ def app():
             outputs=[image, video, output_image, output_video],
         )
         
-        def run_inference(image, video, model_id, image_size, conf_threshold, input_type):
+        def run_inference(image, video,
+                          yolo_model_id,
+                          segment_model_id,
+                          classify_model_id,
+                          image_size,
+                          yolo_conf_threshold,
+                          classify_conf_threshold,
+                          input_type):
             if input_type == "Image":
-                return yolov10_inference(image, None, model_id, image_size, conf_threshold)
+                return yolov10_inference(image, None,
+                                         yolo_model_id,
+                                         segment_model_id,
+                                         classify_model_id,
+                                         image_size,
+                                         yolo_conf_threshold=yolo_conf_threshold,
+                                         classify_conf_threshold=classify_conf_threshold)
             else:
-                return yolov10_inference(None, video, model_id, image_size, conf_threshold)
+                return yolov10_inference(None, video,
+                                         yolo_model_id,
+                                         segment_model_id,
+                                         classify_model_id,
+                                         image_size,
+                                         yolo_conf_threshold=yolo_conf_threshold,
+                                         classify_conf_threshold=classify_conf_threshold)
         
         yolov10_infer.click(
             fn=run_inference,
-            inputs=[image, video, model_id, image_size, conf_threshold, input_type],
+            inputs=[image, video,
+                    yolo_model_id,
+                    segment_model_id,
+                    classify_model_id,
+                    image_size,
+                    yolo_conf_threshold,
+                    classify_conf_threshold,
+                    input_type],
             outputs=[output_image, output_video],
-        )
-        
-        gr.Examples(
-            examples=[
-                [
-                    "ultralytics/assets/bus.jpg",
-                    "yolov10s",
-                    640,
-                    0.25,
-                ],
-                [
-                    "ultralytics/assets/zidane.jpg",
-                    "yolov10s",
-                    640,
-                    0.25,
-                ],
-            ],
-            fn=yolov10_inference_for_examples,
-            inputs=[
-                image,
-                model_id,
-                image_size,
-                conf_threshold,
-            ],
-            outputs=[output_image],
-            cache_examples='lazy',
         )
 
 
@@ -360,15 +379,15 @@ with gradio_app:
     gr.HTML(
         """
     <h1 style='text-align: center'>
-    YOLOv10: Real-Time End-to-End Object Detection
+    Puncture Detection
     </h1>
     """)
-    gr.HTML(
-        """
-        <h3 style='text-align: center'>
-        <a href='https://arxiv.org/abs/2405.14458' target='_blank'>arXiv</a> | <a href='https://github.com/THU-MIG/yolov10' target='_blank'>github</a>
-        </h3>
-        """)
+    # gr.HTML(
+    #     """
+    #     <h3 style='text-align: center'>
+    #     <a href='https://arxiv.org/abs/2405.14458' target='_blank'>arXiv</a> | <a href='https://github.com/THU-MIG/yolov10' target='_blank'>github</a>
+    #     </h3>
+    #     """)
     with gr.Row():
         with gr.Column():
             app()
