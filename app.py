@@ -1,15 +1,19 @@
 import gradio as gr
 import cv2
 import tempfile
-
+import torch
 from PIL import Image
 
 from ultralytics import YOLOv10
 import numpy as np
-import torch
 import io
 import matplotlib.pyplot as plt
+from utils.config import get_config
 from utils.segment_everything import show_anns, segment
+from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
+
+CONFIG = get_config()
+# PATH.WEIGHTS_PATH
 
 INIT_SHAFT_LEN = 20  # 针梗的实际长度，单位为毫米
 MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
@@ -23,7 +27,7 @@ def yolov10_inference(image, video,
                       classify_model_id,
                       image_size,
                       yolo_conf_threshold,
-                      classify_conf_threshold):
+                      judge_wnd):
     if yolo_model_id.endswith("pt"):
         model = YOLOv10(f'{yolo_model_id}')
     else:
@@ -57,88 +61,113 @@ def yolov10_inference(image, video,
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
         pixel_len_arr = []  # 视频中针梗的长度，以像素为单位
-        insert_counter = 0  # 连续插入计数器
         insert_spec_counter = 0  # 判断插入皮肤超出长度计数器
         inserted = False  # 是否插入皮肤（只判断初始固定距离）
-        insert_start, insert_spec_end = None, None  # 记录插入皮肤的开始和指定结束时间
+        # insert_start_time, insert_spec_end_time = None, None  # 记录插入皮肤的开始和指定结束时间
         insert_start_frame, insert_spec_end_frame = None, None  # 记录插入皮肤的开始和指定结束所在帧
         spec_insert_speed = None  # 插入皮肤指定长度的速度
         speed_clac_compute = False
+
+        frames = [] # 帧列表
+        yolo_batch_size = 4
+        yolo_pred_results = [] # yolo的预测结果
+        yolo_pred_boxes = [] # yolo预测的目标位置信息
+        cls_model = load_efficient_net(name=classify_model_id)
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
-            
+            frames.append(frame)
+
+        # yolo检测图片
+        for i in range(0, len(frames), yolo_batch_size):
+            batch_frames = frames[i:i + yolo_batch_size]
+            pred_results = model.predict(source=batch_frames, imgsz=image_size, conf=yolo_conf_threshold)
+            for pred_result in pred_results:
+                yolo_pred_results.append(pred_result)
+                yolo_pred_boxes.append(pred_result.boxes)
+    
+        
+        class_list, prob_list, insert_start_frame = predict_and_find_start_inserted(cls_model, 
+                                        frames=frames, 
+                                        boxes_list=yolo_pred_boxes, 
+                                        judge_wnd=judge_wnd,  
+                                        batch_size=yolo_batch_size)
+        # debug for: 查看分类结果
+        # s_cnt = 0
+        # for index, prob in zip(class_list, prob_list):
+        #     s_cnt+=1
+        #     if s_cnt>10 and s_cnt<230:
+        #         print(f"{s_cnt},类: {index} => 概率: {round(prob * 100, 2)}%")
+        
+        for idx, (frame, pred_result, cls, prob) in enumerate(zip(frames, yolo_pred_results, class_list, prob_list)):
+            pred_boxes = pred_result.boxes
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mask = np.zeros_like(frame)
             roi_mask = np.zeros_like(frame)
             
-            results = model.predict(source=frame, imgsz=image_size, conf=yolo_conf_threshold)
-            pred_boxes = results[0].boxes
+            # 若检测到多个物体，取置信度最大的
+            if len(pred_boxes) == 0:
+                continue
+            best_conf_idx = torch.argmax(pred_boxes.conf)
+            name = cls
+            xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
+            x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
+            shaft_pixel_len = (x2 - x1) * (y2 - y1)  # 针梗的像素长度
             
-            if len(pred_boxes.cls) > 0:
-                # 若检测到多个物体，取置信度最大的
-                best_conf_idx = torch.argmax(pred_boxes.conf)
-                cls, conf = int(pred_boxes.cls[best_conf_idx]), float(pred_boxes.conf[best_conf_idx])
-                name = results[0].names[cls]
-                xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
-                x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
-                shaft_pixel_len = (x2 - x1) * (y2 - y1)  # 针梗的像素长度
-                
-                # 针梗分割
-                if not speed_clac_compute:
-                    height, width, _ = frame.shape
-                    x1 = max(0, x1 - OUT_EXPAND)
-                    y1 = max(0, y1 - OUT_EXPAND)
-                    x2 = min(width, x2 + OUT_EXPAND)
-                    y2 = min(height, y2 + OUT_EXPAND)
-                    roi = rgb_frame[y1:y2, x1:x2]
-                    masks = segment(roi, segment_model_id)
-                    masks = filter_masks(masks, (x1, y1, x2, y2))
-                    # TODO: masks 长度可能为 0
-                    if len(masks) == 0:
-                        continue
-                    mask = show_anns(frame.shape, masks, x1, y1)
-                    _, _, w, h = masks[0]['bbox']
-                    shaft_pixel_len = np.sqrt(w**2 + h**2)
-                
-                if cls == 0 and not inserted and shaft_pixel_len is not None:
-                    pixel_len_arr.append(shaft_pixel_len)
-                    if len(pixel_len_arr) > CONFIRMATION_FRAMES:
-                        pixel_len_arr.pop(0)
-                if cls == 1 and len(pixel_len_arr) == 0:
-                    # 第一帧就检测到插入皮肤的情况
-                    pixel_len_arr.append(shaft_pixel_len)
-                actual_len = INIT_SHAFT_LEN if cls == 0 else (
-                        INIT_SHAFT_LEN * shaft_pixel_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
-                
-                # 判断是否开始插入皮肤
-                if cls == 1 and not inserted and not speed_clac_compute:
-                    insert_counter += 1
-                    if insert_counter >= CONFIRMATION_FRAMES:
-                        inserted = True
-                        insert_start = cap.get(cv2.CAP_PROP_POS_MSEC)
-                        insert_start_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
-                
-                # 判断是否插入皮肤达到指定长度
-                if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
-                    insert_spec_counter += 1
-                    if insert_spec_counter >= CONFIRMATION_FRAMES:
-                        insert_spec_counter = 0
-                        insert_counter = 0
-                        inserted = False
-                        speed_clac_compute = True
-                        insert_spec_end = cap.get(cv2.CAP_PROP_POS_MSEC)
-                        spec_insert_speed = 1000 * MOVE_THRESHOLD / (insert_spec_end - insert_start)
-                        insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
-                
-                if speed_clac_compute:
-                    label = f"{name} {conf:.2f} {spec_insert_speed:.2f}mm/s"
-                else:
-                    label = f"{name} {conf:.2f} {actual_len:.2f} {shaft_pixel_len:.2f}"
-                
-                roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
-            # annotated_frame = results[0].plot(label_content=label, best_conf_idx=best_conf_idx)
+            # 针梗分割
+            if not speed_clac_compute:
+                height, width, _ = frame.shape
+                x1 = max(0, x1 - OUT_EXPAND)
+                y1 = max(0, y1 - OUT_EXPAND)
+                x2 = min(width, x2 + OUT_EXPAND)
+                y2 = min(height, y2 + OUT_EXPAND)
+                roi = rgb_frame[y1:y2, x1:x2]
+                masks = segment(roi, segment_model_id)
+                masks = filter_masks(masks, (x1, y1, x2, y2))
+                # TODO: masks 长度可能为 0
+                if len(masks) == 0:
+                    continue
+                mask = show_anns(frame.shape, masks, x1, y1)
+                _, _, w, h = masks[0]['bbox']
+                shaft_pixel_len = np.sqrt(w**2 + h**2)
+            
+            if cls == 0 and not inserted and shaft_pixel_len is not None:
+                pixel_len_arr.append(shaft_pixel_len)
+                if len(pixel_len_arr) > CONFIRMATION_FRAMES:
+                    pixel_len_arr.pop(0)
+            if cls == 1 and len(pixel_len_arr) == 0:
+                # 第一帧就检测到插入皮肤的情况
+                pixel_len_arr.append(shaft_pixel_len)
+            actual_len = INIT_SHAFT_LEN if cls == 0 else (
+                    INIT_SHAFT_LEN * shaft_pixel_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
+            
+            # 判断是否开始插入皮肤
+            if idx == insert_start_frame:
+                # insert_start_time = cap.get(cv2.CAP_PROP_POS_MSEC)
+                inserted = True
+            
+            # 判断是否插入皮肤达到指定长度
+            if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
+                # insert_spec_counter += 1
+                # if insert_spec_counter >= CONFIRMATION_FRAMES:
+                    # insert_spec_counter = 0
+                inserted = False
+                speed_clac_compute = True
+                insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                # insert_spec_end_time = cap.get(cv2.CAP_PROP_POS_MSEC)
+                # spec_insert_speed = 1000 * MOVE_THRESHOLD / (insert_spec_end_time - insert_start_time)
+                interval_time = (insert_spec_end_frame - insert_start_frame) / fps
+                spec_insert_speed = 1000 * MOVE_THRESHOLD / interval_time
+            
+            if speed_clac_compute:
+                label = f"{name} {prob:.2f} {spec_insert_speed:.2f}mm/s"
+            else:
+                label = f"{name} {prob:.2f} {actual_len:.2f} {shaft_pixel_len:.2f}"
+            
+            roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
+            # annotated_frame = pred_result.plot(label_content=label, best_conf_idx=best_conf_idx)
             combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
             out.write(combined_frame)
@@ -290,9 +319,9 @@ def app():
                 classify_model_id = gr.Dropdown(
                     label="Classify Model",
                     choices=[
-                        "EfficientNet_23",
+                        "EfficientNet/EfficientNet_23.pkl",
                     ],
-                    value="EfficientNet_23"
+                    value="EfficientNet/EfficientNet_23.pkl"
                 )
                 image_size = gr.Slider(
                     label="Image Size",
@@ -308,12 +337,12 @@ def app():
                     step=0.05,
                     value=0.35,
                 )
-                classify_conf_threshold = gr.Slider(
-                    label="Classify Confidence Threshold",
-                    minimum=0.7,
-                    maximum=1,
-                    step=0.05,
-                    value=0.9,
+                judge_wnd = gr.Slider(
+                    label="Window Size for Judging Insert-starting Frame",
+                    minimum=5,
+                    maximum=40,
+                    step=5,
+                    value=20,
                 )
                 yolov10_infer = gr.Button(value="Detect Objects")
             
@@ -341,7 +370,7 @@ def app():
                           classify_model_id,
                           image_size,
                           yolo_conf_threshold,
-                          classify_conf_threshold,
+                          judge_wnd,
                           input_type):
             if input_type == "Image":
                 return yolov10_inference(image, None,
@@ -350,7 +379,7 @@ def app():
                                          classify_model_id,
                                          image_size,
                                          yolo_conf_threshold=yolo_conf_threshold,
-                                         classify_conf_threshold=classify_conf_threshold)
+                                         judge_wnd=judge_wnd)
             else:
                 return yolov10_inference(None, video,
                                          yolo_model_id,
@@ -358,7 +387,7 @@ def app():
                                          classify_model_id,
                                          image_size,
                                          yolo_conf_threshold=yolo_conf_threshold,
-                                         classify_conf_threshold=classify_conf_threshold)
+                                         judge_wnd=judge_wnd)
         
         yolov10_infer.click(
             fn=run_inference,
@@ -368,7 +397,7 @@ def app():
                     classify_model_id,
                     image_size,
                     yolo_conf_threshold,
-                    classify_conf_threshold,
+                    judge_wnd,
                     input_type],
             outputs=[output_image, output_video],
         )
