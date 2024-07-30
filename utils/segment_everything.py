@@ -28,7 +28,7 @@ def show_box(box, ax):
 
 def show_anns(frame_shape, anns, x_offset=0, y_offset=0):
     """
-    生成一个mask数组，用于cv2.addWeighted函数。
+    生成一个 mask 数组，用于 `cv2.addWeighted` 函数。
 
     Args:
     - image_shape: 原始图像的形状 (height, width, channels)。
@@ -36,8 +36,10 @@ def show_anns(frame_shape, anns, x_offset=0, y_offset=0):
     - x_offset, y_offset: 遮罩位置的偏移量，用于将局部遮罩放置在全图的正确位置。
 
     Returns:
-    - mask: 生成的mask数组。
+    - mask: 生成的掩码数组。
     """
+    if (not isinstance(anns, list)) and (not isinstance(anns, np.ndarray)):
+        anns = [anns]
     if len(anns) == 0:
         return np.zeros(frame_shape, dtype=np.uint8)
     
@@ -59,7 +61,7 @@ def show_anns(frame_shape, anns, x_offset=0, y_offset=0):
         # 在遮罩中心位置附近添加面积标签
         area_text = f"{ann['area']:.1f}"
         cv2.putText(mask, area_text, (int(x_center), int(y_center)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
     return mask
 
 
@@ -75,10 +77,6 @@ def segment(image, model_type="vit_l", device="cuda"):
     
     mask_generator = SamAutomaticMaskGenerator(
         sam,
-        points_per_side=32,
-        points_per_batch=16,
-        pred_iou_thresh=0.9,
-        stability_score_thresh=0.92,
         crop_n_layers=1,
         crop_n_points_downscale_factor=2,
     )
