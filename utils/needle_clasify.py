@@ -44,7 +44,7 @@ def load_efficient_net(name):
 
 
 """
-  帧区域裁剪
+  功能：帧区域裁剪
 """
 # cnt = 0
 def crop_frame(frame, x_center, y_center, box_width, box_height, crop_size=320):
@@ -90,6 +90,7 @@ def crop_frame(frame, x_center, y_center, box_width, box_height, crop_size=320):
 
 
 """
+  功能：预测类别
   model 模型
   iamges numpy.ndarray类型的图片数组
   return (indices, probabilities); indices是类别索引, probabilities是类别对应的概率列表
@@ -121,9 +122,41 @@ def predict_images(model, images):
 
 
 
+"""
+  功能：修正分类-概率序列
+"""
+def fix_class_prob(class_list, prob_list, class_index):
+    n = len(class_list)
+    
+    # 向前遍历，从 class_index-1 到 0
+    for i in range(class_index - 1, -1, -1):
+        if class_list[i] != 0:
+            # 向前搜索最近的0的概率
+            found_prob = 0.6
+            for j in range(i - 1, -1, -1):
+                if class_list[j] == 0:
+                    found_prob = prob_list[j]
+                    break
+            class_list[i] = 0
+            prob_list[i] = found_prob
+    
+    # 向后遍历，从 class_index+1 到 n-1
+    for i in range(class_index + 1, n):
+        if class_list[i] != 1:
+            # 向后搜索最近的1的概率
+            found_prob = 0.6
+            for j in range(i + 1, n):
+                if class_list[j] == 1:
+                    found_prob = prob_list[j]
+                    break
+            class_list[i] = 1
+            prob_list[i] = found_prob
+
+    return class_list, prob_list
 
 
 """
+  功能：预测类别、概率和插入帧
   model
   frames 视频帧
   boxes_list 目标检测的框列表
@@ -164,7 +197,7 @@ def predict_and_find_start_inserted(model, frames=[], boxes_list=[], judge_wnd=2
         prob_list.extend(probs)
 
 
-    ############# 找关键插入帧  #############
+    ############# 找关键插入帧 START  #############
     required_count = 0.9 * judge_wnd
 
     # 阈值列表，从大到小排列
@@ -190,7 +223,15 @@ def predict_and_find_start_inserted(model, frames=[], boxes_list=[], judge_wnd=2
                     break
             if insert_frame_index != -1:
                 break
+    if insert_frame_index == -1:
+        insert_frame_index = 0
+    ############# 找关键插入帧 END  #############
 
+
+
+
+    # 分类序列修正 
+    fix_class_prob(class_list, prob_list, insert_frame_index)
       
     return class_list, prob_list, insert_frame_index
 

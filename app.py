@@ -95,11 +95,11 @@ def yolov10_inference(image, video,
                                         judge_wnd=judge_wnd,  
                                         batch_size=yolo_batch_size)
         # debug for: 查看分类结果
-        # s_cnt = 0
-        # for index, prob in zip(class_list, prob_list):
-        #     s_cnt+=1
-        #     if s_cnt>10 and s_cnt<230:
-        #         print(f"{s_cnt},类: {index} => 概率: {round(prob * 100, 2)}%")
+        s_cnt = 0
+        for index, prob in zip(class_list, prob_list):
+            if s_cnt>10 and s_cnt<230:
+                print(f"{s_cnt},类: {index} => 概率: {round(prob * 100, 2)}%")
+            s_cnt+=1
         
         for idx, (frame, pred_result, cls, prob) in enumerate(zip(frames, yolo_pred_results, class_list, prob_list)):
             pred_boxes = pred_result.boxes
@@ -117,21 +117,21 @@ def yolov10_inference(image, video,
             shaft_pixel_len = (x2 - x1) * (y2 - y1)  # 针梗的像素长度
             
             # 针梗分割
-            if not speed_clac_compute:
-                height, width, _ = frame.shape
-                x1 = max(0, x1 - OUT_EXPAND)
-                y1 = max(0, y1 - OUT_EXPAND)
-                x2 = min(width, x2 + OUT_EXPAND)
-                y2 = min(height, y2 + OUT_EXPAND)
-                roi = rgb_frame[y1:y2, x1:x2]
-                masks = segment(roi, segment_model_id)
-                masks = filter_masks(masks, (x1, y1, x2, y2))
-                # TODO: masks 长度可能为 0
-                if len(masks) == 0:
-                    continue
-                mask = show_anns(frame.shape, masks, x1, y1)
-                _, _, w, h = masks[0]['bbox']
-                shaft_pixel_len = np.sqrt(w**2 + h**2)
+            # if not speed_clac_compute:
+            #     height, width, _ = frame.shape
+            #     x1 = max(0, x1 - OUT_EXPAND)
+            #     y1 = max(0, y1 - OUT_EXPAND)
+            #     x2 = min(width, x2 + OUT_EXPAND)
+            #     y2 = min(height, y2 + OUT_EXPAND)
+            #     roi = rgb_frame[y1:y2, x1:x2]
+            #     masks = segment(roi, segment_model_id)
+            #     masks = filter_masks(masks, (x1, y1, x2, y2))
+            #     # TODO: masks 长度可能为 0
+            #     if len(masks) == 0:
+            #         continue
+            #     mask = show_anns(frame.shape, masks, x1, y1)
+            #     _, _, w, h = masks[0]['bbox']
+            #     shaft_pixel_len = np.sqrt(w**2 + h**2)
             
             if cls == 0 and not inserted and shaft_pixel_len is not None:
                 pixel_len_arr.append(shaft_pixel_len)
@@ -339,7 +339,7 @@ def app():
                 )
                 judge_wnd = gr.Slider(
                     label="Window Size for Judging Insert-starting Frame",
-                    minimum=5,
+                    minimum=10,
                     maximum=40,
                     step=5,
                     value=20,
