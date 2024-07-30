@@ -21,6 +21,8 @@ KEY_FRAME = {
     19: [60, 92],
 }
 
+FRAME_OFFSET = 20
+
 
 def id_assign(video_num, frame_num):
     return int(video_num * 1e6 + frame_num)

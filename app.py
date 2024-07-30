@@ -2,15 +2,13 @@ import gradio as gr
 import cv2
 import tempfile
 import torch
-from PIL import Image
 
 from ultralytics import YOLOv10
 import numpy as np
-import io
-import matplotlib.pyplot as plt
 from utils.config import get_config
 from utils.segment_everything import show_anns, segment
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
+from utils.mask_tools import draw_masks_on_image, create_roi_mask, filter_masks, get_min_rect_len
 
 CONFIG = get_config()
 # PATH.WEIGHTS_PATH
@@ -37,11 +35,12 @@ def yolov10_inference(image, video,
         annotated_image = results[0].plot()
         
         image_darray = np.array(image)
-        masks = segment(image_darray, segment_model_id)
-        masks = filter_masks(masks, (0, 0, image_darray.shape[1], image_darray.shape[0]))
-        print(masks)
-        if len(masks) > 0:
-            img_with_masks = draw_masks_on_image(image, masks)
+        anns = segment(image_darray, segment_model_id)
+        np.save('masks.npy', anns)
+        ann = filter_masks(anns)
+        print(ann)
+        if ann is None:
+            img_with_masks = draw_masks_on_image(image, anns)
         else:
             img_with_masks = image
         return img_with_masks, None
@@ -67,19 +66,19 @@ def yolov10_inference(image, video,
         insert_start_frame, insert_spec_end_frame = None, None  # 记录插入皮肤的开始和指定结束所在帧
         spec_insert_speed = None  # 插入皮肤指定长度的速度
         speed_clac_compute = False
-
-        frames = [] # 帧列表
+        
+        frames = []  # 帧列表
         yolo_batch_size = 4
-        yolo_pred_results = [] # yolo的预测结果
-        yolo_pred_boxes = [] # yolo预测的目标位置信息
+        yolo_pred_results = []  # yolo的预测结果
+        yolo_pred_boxes = []  # yolo预测的目标位置信息
         cls_model = load_efficient_net(name=classify_model_id)
-
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             frames.append(frame)
-
+        
         # yolo检测图片
         for i in range(0, len(frames), yolo_batch_size):
             batch_frames = frames[i:i + yolo_batch_size]
@@ -87,13 +86,12 @@ def yolov10_inference(image, video,
             for pred_result in pred_results:
                 yolo_pred_results.append(pred_result)
                 yolo_pred_boxes.append(pred_result.boxes)
-    
         
-        class_list, prob_list, insert_start_frame = predict_and_find_start_inserted(cls_model, 
-                                        frames=frames, 
-                                        boxes_list=yolo_pred_boxes, 
-                                        judge_wnd=judge_wnd,  
-                                        batch_size=yolo_batch_size)
+        class_list, prob_list, insert_start_frame = predict_and_find_start_inserted(cls_model,
+                                                                                    frames=frames,
+                                                                                    boxes_list=yolo_pred_boxes,
+                                                                                    judge_wnd=judge_wnd,
+                                                                                    batch_size=yolo_batch_size)
         # debug for: 查看分类结果
         s_cnt = 0
         for index, prob in zip(class_list, prob_list):
@@ -114,24 +112,26 @@ def yolov10_inference(image, video,
             name = cls
             xyxy = pred_boxes.xyxy[best_conf_idx].squeeze()
             x1, y1, x2, y2 = map(int, xyxy.cpu().numpy())
+            height, width, _ = frame.shape
+            x1 = max(0, x1 - OUT_EXPAND)
+            y1 = max(0, y1 - OUT_EXPAND)
+            x2 = min(width, x2 + OUT_EXPAND)
+            y2 = min(height, y2 + OUT_EXPAND)
             shaft_pixel_len = (x2 - x1) * (y2 - y1)  # 针梗的像素长度
+            min_rect_len = shaft_pixel_len
             
             # 针梗分割
-            # if not speed_clac_compute:
-            #     height, width, _ = frame.shape
-            #     x1 = max(0, x1 - OUT_EXPAND)
-            #     y1 = max(0, y1 - OUT_EXPAND)
-            #     x2 = min(width, x2 + OUT_EXPAND)
-            #     y2 = min(height, y2 + OUT_EXPAND)
-            #     roi = rgb_frame[y1:y2, x1:x2]
-            #     masks = segment(roi, segment_model_id)
-            #     masks = filter_masks(masks, (x1, y1, x2, y2))
-            #     # TODO: masks 长度可能为 0
-            #     if len(masks) == 0:
-            #         continue
-            #     mask = show_anns(frame.shape, masks, x1, y1)
-            #     _, _, w, h = masks[0]['bbox']
-            #     shaft_pixel_len = np.sqrt(w**2 + h**2)
+            if not speed_clac_compute and idx >= insert_start_frame - CONFIRMATION_FRAMES:
+                roi = rgb_frame[y1:y2, x1:x2]
+                anns = segment(roi, segment_model_id)
+                ann = filter_masks(anns)
+                # TODO: 可能找不到针梗
+                if ann is None:
+                    continue
+                mask = show_anns(frame.shape, ann, x1, y1)
+                _, _, w, h = ann['bbox']
+                shaft_pixel_len = np.sqrt(w**2 + h**2)
+                min_rect_len, _, _ = get_min_rect_len(ann)
             
             if cls == 0 and not inserted and shaft_pixel_len is not None:
                 pixel_len_arr.append(shaft_pixel_len)
@@ -152,7 +152,7 @@ def yolov10_inference(image, video,
             if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
                 # insert_spec_counter += 1
                 # if insert_spec_counter >= CONFIRMATION_FRAMES:
-                    # insert_spec_counter = 0
+                # insert_spec_counter = 0
                 inserted = False
                 speed_clac_compute = True
                 insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
@@ -168,7 +168,7 @@ def yolov10_inference(image, video,
             
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
             # annotated_frame = pred_result.plot(label_content=label, best_conf_idx=best_conf_idx)
-            combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
+            combined_frame = cv2.addWeighted(frame, 1, ann, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
             out.write(combined_frame)
         
@@ -177,114 +177,6 @@ def yolov10_inference(image, video,
         print("Start: ", insert_start_frame, " End: ", insert_spec_end_frame)
         
         return None, output_video_path
-
-
-def draw_masks_on_image(image, masks):
-    plt.figure(figsize=(10, 10))
-    plt.imshow(image)
-    # show_anns(np.array(image).shape,masks)
-    if len(masks) == 0:
-        return
-    sorted_anns = sorted(masks, key=(lambda x: x['area']), reverse=True)
-    ax = plt.gca()
-    ax.set_autoscale_on(False)
-    
-    img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
-    img[:, :, 3] = 0
-    for ann in sorted_anns:
-        m = ann['segmentation']
-        color_mask = np.concatenate([np.random.random(3), [0.35]])
-        img[m] = color_mask
-        # 获取遮罩的中心位置
-        y_coords, x_coords = np.where(m)
-        y_center = np.mean(y_coords)
-        x_center = np.mean(x_coords)
-        
-        # 在遮罩中心位置附近添加面积标签
-        ax.text(x_center, y_center, f"{ann['area']:.1f}", color='white', fontsize=12, ha='center', va='center')
-    ax.imshow(img)
-    ax.imshow(img)
-    plt.axis('off')
-    
-    # 将图像保存到内存中，并转换为NumPy数组
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img_with_masks = np.array(Image.open(buf))
-    
-    plt.close()
-    return img_with_masks
-
-
-def create_roi_mask(frame_shape, x1, y1, x2, y2, label):
-    """
-    在指定的 ROI 区域内绘制一个蓝色框，并在框上方显示标签内容。
-
-    参数：
-    frame_shape (tuple): 原始图像的形状。
-    x1, y1, x2, y2 (int): ROI区域的边界框坐标。
-    label (str): 要显示的标签内容。
-
-    返回：
-    np.ndarray: 带有蓝色框和标签的mask数组。
-    """
-    height, width, _ = frame_shape
-    mask = np.zeros((height, width, 3), dtype=np.uint8)
-    
-    color = (0, 0, 255)
-    thickness = 2
-    cv2.rectangle(mask, (x1, y1), (x2, y2), color, thickness)
-    
-    # 在框上方显示标签内容
-    font = cv2.FONT_HERSHEY_COMPLEX
-    font_scale = 1
-    font_thickness = 2
-    text_size = cv2.getTextSize(label, font, font_scale, font_thickness)[0]
-    text_x = x1
-    text_y = y1 - 10 if y1 - 10 > 10 else y1 + 10 + text_size[1]
-    if label:
-        cv2.putText(mask, label, (text_x, text_y), font, font_scale, color, font_thickness, cv2.LINE_AA)
-    
-    return mask
-
-
-def filter_masks(masks, roi):
-    """
-    过滤掉不符合特定条件的遮罩（masks）。
-
-    参数：
-    masks (list): 包含遮罩信息的字典列表，每个字典包含 'bbox' 键和相应的边界框信息。
-    roi (tuple): 感兴趣区域的边界框，以 (x1, y1, x2, y2) 格式表示。
-
-    返回：
-    list: 过滤后的遮罩列表。
-    """
-    x1_roi, y1_roi, x2_roi, y2_roi = roi
-    width_roi = x2_roi - x1_roi
-    height_roi = y2_roi - y1_roi
-    
-    filtered_masks = []
-    for mask in masks:
-        x, y, w, h = mask['bbox']
-        area = mask['area']
-        if x == 0 or y == 0 or w == height_roi or h == width_roi:
-            continue
-        x += x1_roi
-        y += y1_roi
-        # 检查边界框是否在 ROI 的左半部分或右半部分之外
-        if x > x1_roi + width_roi / 2:
-            continue
-        if x + w < x2_roi - width_roi / 2:
-            continue
-        # 检查边界框是否包含了 ROI 边框部分
-        if x < x1_roi or x + w > x2_roi or y < y1_roi or y + h > y2_roi:
-            continue
-        # 检查面积是否小于 200 像素
-        if area < 300 or area > 1500:
-            continue
-        filtered_masks.append(mask)
-    
-    return filtered_masks
 
 
 def app():
