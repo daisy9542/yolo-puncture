@@ -89,7 +89,6 @@ def process_and_save_masks(video_num, start_frame=0, end_frame=-1):
     end_frame = len(all_masks) - 1 if end_frame == -1 else end_frame
     start_frame = max(0, start_frame)
     end_frame = min(len(all_masks), end_frame)
-    exception_files = []
     
     prev_area = None
     os.makedirs(f"annotations/images", exist_ok=True)
@@ -101,7 +100,6 @@ def process_and_save_masks(video_num, start_frame=0, end_frame=-1):
         image = cv2.imread(image_path)
         
         if len(masks) == 0:
-            exception_files.append(image_path)
             continue
         
         masks_sorted = sorted(masks, key=lambda x: abs(x['area'] - (prev_area if prev_area is not None else 0)))
@@ -114,7 +112,6 @@ def process_and_save_masks(video_num, start_frame=0, end_frame=-1):
         while True:
             key = cv2.waitKey(1) & 0xFF
             if key == ord('s'):
-                exception_files.append(image_path)
                 break
             elif key == ord('q'):
                 cv2.destroyAllWindows()
@@ -134,11 +131,6 @@ def process_and_save_masks(video_num, start_frame=0, end_frame=-1):
                 break
         
         cv2.destroyAllWindows()
-    
-    os.makedirs("annotations/exceptions", exist_ok=True)
-    with open(f"annotations/exceptions/video{video_num}_exceptions.json", 'w') as f:
-        print(f"Save to annotations/exceptions/video{video_num}_exceptions.json ...")
-        json.dump(exception_files, f)
 
 
 if __name__ == '__main__':
