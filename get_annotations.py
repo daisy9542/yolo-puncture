@@ -3,74 +3,104 @@ import re
 import cv2
 import numpy as np
 import argparse
+import pickle
 from functools import cmp_to_key
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
+import torch
 from utils.config import get_config
 from utils.segment_everything import segment
 from utils.mask_tools import filter_masks
+from dev_tools.toolbox import KEY_FRAME, FRAME_OFFSET, polygon_encoding
 
 CONFIG = get_config()
 
+pattern = re.compile(r'.*?(\d+)frame_(\d+)\.(jpg|jpeg|png)')
+
 
 def compare_filenames(f1, f2):
-    # 分割文件名，获取视频编号和帧编号
-    pattern = re.compile(r'.*/(\d+)frame_(\d+)\.jpg')
     match1 = pattern.match(f1)
     match2 = pattern.match(f2)
-    video1, frame1 = map(int, match1.groups())
-    video2, frame2 = map(int, match2.groups())
     
-    # 首先按视频编号排序，如果视频编号相同，则按帧编号排序
-    if video1 < video2:
-        return -1
-    elif video1 > video2:
-        return 1
-    else:
-        if frame1 < frame2:
-            return -1
-        elif frame1 > frame2:
-            return 1
-    return 0
+    if not match1 or not match2:
+        raise ValueError(f"Filename does not match the expected pattern: {f1}, {f2}")
+    
+    video1, frame1 = map(int, match1.groups()[:2])
+    video2, frame2 = map(int, match2.groups()[:2])
+    
+    if video1 != video2:
+        return video1 - video2
+    return frame1 - frame2
 
 
-def process_and_save_images(input_dir, output_dir, video_nums):
-    # 获取所有图片文件
+def process_video(video_num, input_dir, output_dir, device_id, topn):
     files_to_process = []
-    for video_num in video_nums:
-        print(f"Processing video {video_num} ...")
-        for root, _, files in os.walk(input_dir):
-            for file in files:
-                if file.startswith(f"{video_num}frame") and file.endswith(('.jpg', '.jpeg', '.png')):
+    for root, _, files in os.walk(input_dir):
+        for file in files:
+            if pattern.match(file):
+                match = pattern.match(file)
+                cur_video_num, frame_num = map(int, match.groups()[:2])
+                start_frame, end_frame = KEY_FRAME[video_num]
+                start_frame -= FRAME_OFFSET
+                end_frame += FRAME_OFFSET
+                if cur_video_num == video_num and start_frame <= frame_num <= end_frame:
                     files_to_process.append(os.path.join(root, file))
+    
+    output_file_path = os.path.join(output_dir, f"video{video_num}.pkl")
+    os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+    video_masks = {}
+    sorted_files = sorted(files_to_process, key=cmp_to_key(compare_filenames))
+    
+    torch.cuda.set_device(device_id)
+    
+    for input_file_path in tqdm(sorted_files, desc=f"Processing video {video_num}"):
+        image = cv2.imread(input_file_path)
         
-        output_file_path = os.path.join(output_dir, f"video{video_num}.npy")
-        os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
-        video_masks = []
-        sorted_files = sorted(files_to_process, key=cmp_to_key(compare_filenames))
-        for input_file_path in tqdm(sorted_files, desc="Processing images"):
-            # 读取图像
-            image = cv2.imread(input_file_path)
-            
-            # 处理图像，获得 masks
-            masks = segment(image)
-            masks = filter_masks(masks, 5)
-            
-            video_masks.append(masks)
-        # 保存masks到输出目录
-        np.save(output_file_path, video_masks)
+        masks = segment(image)
+        masks = filter_masks(masks, topn)
+        
+        polygon_masks = []
+        filename = os.path.basename(input_file_path)
+        for mask in masks:
+            polygon_masks.append({
+                "segmentation": polygon_encoding(mask["segmentation"]),
+                "bbox": mask["bbox"]
+            })
+        video_masks[filename] = polygon_masks
+    pickle.dump(video_masks, open(output_file_path, 'wb'))
 
 
 def parse_numbers(s):
     if s.isdigit():
-        return [s]
+        return [int(s)]
+    elif '-' in s:
+        start, end = map(int, s.split('-'))
+        return list(range(start, end + 1))
     else:
-        return [item for item in s.split(',')]
+        return [int(item) for item in s.split(',')]
+
+
+def run(video_nums, input_dir, output_dir, num_videos_per_gpu, topn):
+    num_gpus = torch.cuda.device_count()
+    max_workers = num_gpus * num_videos_per_gpu
+    
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        for i, video_num in enumerate(video_nums):
+            device_id = (i // num_videos_per_gpu) % num_gpus
+            futures.append(executor.submit(process_video, video_num, input_dir, output_dir, device_id, topn))
+        
+        for future in tqdm(futures):
+            future.result()  # 等待所有任务完成
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="segment annotations")
-    parser.add_argument('--video_num', type=str, required=True, help="视频编号，单个数字或者以逗号分隔")
-    input_dir = os.path.join(CONFIG.PATH.DATASETS_PATH, 'needle/images')
-    output_dir = "segment_anns"
+    parser.add_argument('--video_num', type=str, required=True, help="视频编号，单个数字或者以逗号、横杠分隔")
+    parser.add_argument('--input_dir', type=str, default=os.path.join(CONFIG.PATH.DATASETS_PATH, 'needle/images'),
+                        help="输入目录")
+    parser.add_argument('--output_dir', type=str, default="segment_anns", help="输出目录")
+    parser.add_argument('--num_videos_per_gpu', type=int, default=4, help="每个 GPU 处理的视频数量")
+    parser.add_argument('--topn', type=int, default=5, help="筛选的掩码数量")
     args = parser.parse_args()
-    process_and_save_images(input_dir, output_dir, parse_numbers(args.video_num))
+    run(parse_numbers(args.video_num), args.input_dir, args.output_dir, args.num_videos_per_gpu, args.topn)
