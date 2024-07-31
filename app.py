@@ -2,6 +2,7 @@ import gradio as gr
 import cv2
 import tempfile
 import torch
+import numpy as np
 
 from ultralytics import YOLO
 from utils.config import get_config
@@ -19,13 +20,16 @@ OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 def yolo_inference(image, video,
                    yolo_model_id,
                    classify_model_id,
-                   image_size,
                    yolo_conf_threshold,
                    judge_wnd):
     model = YOLO(f'{yolo_model_id}')
     if image:
-        results = model.predict(source=image, imgsz=image_size, conf=yolo_conf_threshold)
+        results = model.predict(source=image, conf=yolo_conf_threshold)
         annotated_image = results[0].plot()
+        # seg_masks = results[0].masks.data.cpu().numpy()
+        # image = np.array(image)
+        # mask = draw_masks_on_image(image.shape, seg_masks)
+        # annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
         return annotated_image, None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
@@ -46,6 +50,7 @@ def yolo_inference(image, video,
         anns = []  # 实例分割标注数组
         last_box = None  # 上一帧的目标位置信息
         frames = []  # 帧列表
+        # annotated_frames = []  # 带有实例分割的帧列表
         yolo_batch_size = 4
         pixel_len_arr = []  # 视频中针梗的长度，以像素为单位
         inserted = False  # 是否插入皮肤（只判断初始固定距离）
@@ -59,7 +64,7 @@ def yolo_inference(image, video,
                 break
             frames.append(frame)
             
-            results = model.predict(source=frame, imgsz=image_size, conf=yolo_conf_threshold)
+            results = model.predict(source=frame, conf=yolo_conf_threshold)
             pred_boxes = results[0].boxes
             height, width, _ = frame.shape
             
@@ -69,8 +74,7 @@ def yolo_inference(image, video,
                 xyxy_box = pred_boxes.xyxy[best_conf_idx].squeeze().cpu()
                 xyxy_box = list(map(int, xyxy_box))
                 last_box = xyxy_box
-                seg_mask = results[0].masks.cpu().numpy().data[best_conf_idx]
-                print(seg_mask.shape)
+                seg_mask = results[0].masks.data[best_conf_idx].cpu().numpy()
                 anns.append(seg_mask)
             else:
                 if last_box is None:
@@ -129,14 +133,16 @@ def yolo_inference(image, video,
             if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
                 inserted = False
                 speed_clac_compute = True
-                insert_spec_end_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                insert_spec_end_frame = idx
                 interval_time = (insert_spec_end_frame - insert_start_frame) / fps
-                spec_insert_speed = 1000 * MOVE_THRESHOLD / interval_time
+                spec_insert_speed = MOVE_THRESHOLD / interval_time
             
             if speed_clac_compute:
-                label = f"{cls} {prob:.2f} {spec_insert_speed:.2f}mm/s"
+                label = f"{idx} {cls} {prob:.2f} {spec_insert_speed:.2f}mm/s"
+            elif rect_len is None:
+                label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} -"
             else:
-                label = f"{cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
+                label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
             
             mask = draw_masks_on_image(frame.shape, ann)
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
@@ -176,13 +182,6 @@ def app():
                     ],
                     value="EfficientNet/EfficientNet_23.pkl"
                 )
-                image_size = gr.Slider(
-                    label="Image Size",
-                    minimum=320,
-                    maximum=1280,
-                    step=32,
-                    value=640,
-                )
                 yolo_conf_threshold = gr.Slider(
                     label="Confidence Threshold",
                     minimum=0.0,
@@ -220,7 +219,6 @@ def app():
         def run_inference(image, video,
                           yolo_model_id,
                           classify_model_id,
-                          image_size,
                           yolo_conf_threshold,
                           judge_wnd,
                           input_type):
@@ -228,14 +226,12 @@ def app():
                 return yolo_inference(image, None,
                                       yolo_model_id,
                                       classify_model_id,
-                                      image_size,
                                       yolo_conf_threshold=yolo_conf_threshold,
                                       judge_wnd=judge_wnd)
             else:
                 return yolo_inference(None, video,
                                       yolo_model_id,
                                       classify_model_id,
-                                      image_size,
                                       yolo_conf_threshold=yolo_conf_threshold,
                                       judge_wnd=judge_wnd)
         
@@ -244,7 +240,6 @@ def app():
             inputs=[image, video,
                     yolo_model_id,
                     classify_model_id,
-                    image_size,
                     yolo_conf_threshold,
                     judge_wnd,
                     input_type],

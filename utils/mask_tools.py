@@ -15,26 +15,19 @@ def get_min_rect_len(seg_mask):
     return width, height, ratio
 
 
-def draw_masks_on_image(img_shape, anns, x_offset=0, y_offset=0):
+def draw_masks_on_image(img_shape, ann, x_offset=0, y_offset=0):
     mask = np.zeros(img_shape, dtype=np.uint8)
-    if anns is None:
-        return mask
-    if (not isinstance(anns, list)) and (not isinstance(anns, np.ndarray)):
-        anns = [anns]
-    if len(anns) == 0:
+    
+    if ann is None:
         return mask
     
-    for ann in anns:
-        if ann is None:
-            continue
-        
-        color_mask = np.random.randint(0, 255, (3,), dtype=int)
-        if len(ann.shape) == 2:
-            y_indices, x_indices = np.nonzero(ann)
-            y_indices = y_indices + y_offset
-            x_indices = x_indices + x_offset
-            
-            mask[y_indices, x_indices] = color_mask
+    # color_mask = np.random.randint(0, 255, (3,), dtype=int)
+    color_mask = (255, 255, 0)
+    y_indices, x_indices = np.nonzero(ann)
+    y_indices = y_indices + y_offset
+    x_indices = x_indices + x_offset
+    
+    mask[y_indices, x_indices] = color_mask
     
     return mask
 

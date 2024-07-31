@@ -48,7 +48,7 @@ def crop_frame(frame, xyxy, crop_size=320):
     """
     height, width, _ = frame.shape
     x1, y1, x2, y2 = xyxy
-    x_center,y_center = int((x1 + x2) / 2), int((y1 + y2) / 2)
+    x_center, y_center = int((x1 + x2) / 2), int((y1 + y2) / 2)
     
     # 扩展到crop_sizexcrop_size
     half_size = crop_size // 2
@@ -62,9 +62,7 @@ def crop_frame(frame, xyxy, crop_size=320):
     y1 = max(0, y1)
     x2 = min(width, x2)
     y2 = min(height, y2)
-
-
-
+    
     cropped_image = frame[y1:y2, x1:x2]
     
     # 如果切图大小不足crop_sizexcrop_size，进行补边
@@ -78,18 +76,16 @@ def crop_frame(frame, xyxy, crop_size=320):
     # print(fpath)
     # cv2.imwrite(fpath, cropped_image)
     # cnt+=1
-    # return cropped_image
-
-
-"""
-  功能：预测类别
-  model 模型
-  iamges numpy.ndarray类型的图片数组
-  return (indices, probabilities); indices是类别索引, probabilities是类别对应的概率列表
-"""
+    return cropped_image
 
 
 def predict_images(model, images):
+    """
+      功能：预测类别
+      model 模型
+      iamges numpy.ndarray类型的图片数组
+      return (indices, probabilities); indices是类别索引, probabilities是类别对应的概率列表
+    """
     model.eval()
     probabilities = []
     indices = []
