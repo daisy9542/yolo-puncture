@@ -46,32 +46,7 @@ def load_efficient_net(name):
 """
   功能：帧区域裁剪
 """
-# cnt = 0
-def crop_frame(frame, x_center, y_center, box_width, box_height, crop_size=320):
-    # global cnt 
-    height, width, _ = frame.shape
-    x_center = x_center * width
-    y_center = y_center * height
-    box_width = box_width * width
-    box_height = box_height * height
-    
-    x_center = int(x_center)
-    y_center = int(y_center)
-    box_width = int(box_width)
-    box_height = int(box_height)
-    
-    # 扩展到crop_sizexcrop_size
-    half_size = crop_size // 2
-    x1 = x_center - half_size
-    y1 = y_center - half_size
-    x2 = x_center + half_size
-    y2 = y_center + half_size
-    
-    # 边界检查
-    x1 = max(0, x1)
-    y1 = max(0, y1)
-    x2 = min(width, x2)
-    y2 = min(height, y2)
+def crop_frame(frame, x1, y1, x2, y2, crop_size=320):
     
     cropped_image = frame[y1:y2, x1:x2]
     
@@ -172,18 +147,7 @@ def predict_and_find_start_inserted(model, frames=[], boxes_list=[], judge_wnd=2
     # print(f"frames length: {len(frames)}")
     for i,boxes in enumerate(boxes_list):
         frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
-        if len(boxes.cls) > 0:
-            best_conf_idx = torch.argmax(boxes.conf)
-            xywh = boxes.xywhn[best_conf_idx].squeeze()
-            x, y, w, h = xywh.cpu().numpy()
-            previous_box = (x, y, w, h)
-            roi = crop_frame(frame, x, y, w, h)
-        elif previous_box is not None:
-            print(f"frame {i} has no box, use previous box")
-            roi = crop_frame(frame, *previous_box)
-        else:
-            roi = np.zeros((INPUT_IMG_SIZE,INPUT_IMG_SIZE,3),dtype=frames[0].dtype) #这样预测的结果类别几乎是0
-            print(f"frame {i} has no box, create zero_like image, image shape: {roi.shape}")
+        roi = crop_frame(frame, *boxes)
         roi_list.append(roi)
     
     # 预测
