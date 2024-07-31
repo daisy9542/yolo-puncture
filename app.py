@@ -110,7 +110,8 @@ def yolo_inference(image, video,
                 last_xyxy = x1, y1, x2, y2
             
             if ann is not None:
-                rect_len = get_min_rect_len(ann)[0]
+                min_rect_w, min_rect_h, _ = get_min_rect_len(ann)
+                rect_len = max(min_rect_w, min_rect_h)
                 last_rect_len = rect_len
             else:
                 rect_len = last_rect_len
@@ -119,11 +120,15 @@ def yolo_inference(image, video,
                 pixel_len_arr.append(rect_len)
                 if len(pixel_len_arr) > CONFIRMATION_FRAMES:
                     pixel_len_arr.pop(0)
-            # if cls == 1 and len(pixel_len_arr) == 0:
-            #     # 第一帧就检测到插入皮肤的情况
-            #     pixel_len_arr.append(shaft_pixel_len)
+            if cls == 1 and len(pixel_len_arr) == 0:
+                # 第一帧就检测到插入皮肤的情况
+                if rect_len is None:
+                    continue
+                else:
+                    pixel_len_arr.append(rect_len)
             actual_len = INIT_SHAFT_LEN if cls == 0 else (
                     INIT_SHAFT_LEN * rect_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
+            print(rect_len, actual_len)
             
             # 判断是否开始插入皮肤
             if idx == insert_start_frame:
