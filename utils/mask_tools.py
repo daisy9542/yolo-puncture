@@ -5,9 +5,8 @@ import io
 from PIL import Image
 
 
-def get_min_rect_len(mask):
+def get_min_rect_len(seg_mask):
     """计算掩码的最小外接矩形的长度，这里指的 `width`"""
-    seg_mask = mask["segmentation"]
     # 找到掩码中所有像素点为 True 的坐标
     points = np.column_stack(np.where(seg_mask)).astype(np.int32)
     # 计算最小外接矩形 ((center_x, center_y), (width, height), angle)
@@ -16,41 +15,28 @@ def get_min_rect_len(mask):
     return width, height, ratio
 
 
-def draw_masks_on_image(image, masks):
-    plt.figure(figsize=(10, 10))
-    plt.imshow(image)
-    # show_anns(np.array(image).shape,masks)
-    if len(masks) == 0:
-        return
-    sorted_anns = sorted(masks, key=(lambda x: x['area']), reverse=True)
-    ax = plt.gca()
-    ax.set_autoscale_on(False)
+def draw_masks_on_image(img_shape, anns, x_offset=0, y_offset=0):
+    mask = np.zeros(img_shape, dtype=np.uint8)
+    if anns is None:
+        return mask
+    if (not isinstance(anns, list)) and (not isinstance(anns, np.ndarray)):
+        anns = [anns]
+    if len(anns) == 0:
+        return mask
     
-    img = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
-    img[:, :, 3] = 0
-    for ann in sorted_anns:
-        m = ann['segmentation']
-        color_mask = np.concatenate([np.random.random(3), [0.35]])
-        img[m] = color_mask
-        # 获取遮罩的中心位置
-        y_coords, x_coords = np.where(m)
-        y_center = np.mean(y_coords)
-        x_center = np.mean(x_coords)
+    for ann in anns:
+        if ann is None:
+            continue
         
-        # 在遮罩中心位置附近添加面积标签
-        ax.text(x_center, y_center, f"{ann['area']:.1f}", color='white', fontsize=12, ha='center', va='center')
-    ax.imshow(img)
-    ax.imshow(img)
-    plt.axis('off')
+        color_mask = np.random.randint(0, 255, (3,), dtype=int)
+        if len(ann.shape) == 2:
+            y_indices, x_indices = np.nonzero(ann)
+            y_indices = y_indices + y_offset
+            x_indices = x_indices + x_offset
+            
+            mask[y_indices, x_indices] = color_mask
     
-    # 将图像保存到内存中，并转换为NumPy数组
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    img_with_masks = np.array(Image.open(buf))
-    
-    plt.close()
-    return img_with_masks
+    return mask
 
 
 def create_roi_mask(frame_shape, x1, y1, x2, y2, label):
