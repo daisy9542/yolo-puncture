@@ -12,7 +12,7 @@ from utils.config import get_config
 CONFIG = get_config()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 NUM_CLASSES = 2
-INPUT_IMG_SIZE = 320
+INPUT_IMG_SIZE = 348
 
 
 class ModifiedEfficientNet(nn.Module):
@@ -42,7 +42,7 @@ def load_efficient_net(name):
     return model
 
 
-def crop_frame(frame, xyxy, crop_size=320):
+def crop_frame(frame, xyxy, crop_size=INPUT_IMG_SIZE):
     """
       功能：帧区域裁剪
     """
