@@ -7,7 +7,7 @@ import numpy as np
 from ultralytics import YOLO
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
-from utils.mask_tools import draw_masks_on_image, create_roi_mask, get_min_rect_len
+from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
 
 CONFIG = get_config()
 
@@ -17,6 +17,7 @@ CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 
 
+
 def yolo_inference(image, video,
                    yolo_model_id,
                    classify_model_id,
@@ -24,13 +25,15 @@ def yolo_inference(image, video,
                    judge_wnd):
     model = YOLO(f'{yolo_model_id}')
     if image:
-        results = model.predict(source=image, conf=yolo_conf_threshold)
-        annotated_image = results[0].plot()
-        # seg_masks = results[0].masks.data.cpu().numpy()
-        # image = np.array(image)
-        # mask = draw_masks_on_image(image.shape, seg_masks)
-        # annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
-        return annotated_image, None
+        results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
+        # annotated_image = results[0].plot()
+        # print(results[0].masks.xy)
+        seg_coords = results[0].masks.xy[0]
+        image = np.array(image)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        mask = get_coord_mask(image.shape, seg_coords)
+        annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
+        return annotated_image[:, :, ::-1], None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
         
@@ -47,10 +50,9 @@ def yolo_inference(image, video,
         out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
         yolo_pred_xyxy = []  # yolo 预测的目标位置信息
-        anns = []  # 实例分割标注数组
+        coord_xys = []  # 实例分割标注数组
         last_box = None  # 上一帧的目标位置信息
         frames = []  # 帧列表
-        # annotated_frames = []  # 带有实例分割的帧列表
         yolo_batch_size = 4
         pixel_len_arr = []  # 视频中针梗的长度，以像素为单位
         inserted = False  # 是否插入皮肤（只判断初始固定距离）
@@ -74,14 +76,14 @@ def yolo_inference(image, video,
                 xyxy_box = pred_boxes.xyxy[best_conf_idx].squeeze().cpu()
                 xyxy_box = list(map(int, xyxy_box))
                 last_box = xyxy_box
-                seg_mask = results[0].masks.data[best_conf_idx].cpu().numpy()
-                anns.append(seg_mask)
+                seg_mask = results[0].masks.xy[best_conf_idx]
+                coord_xys.append(seg_mask)
             else:
                 if last_box is None:
                     xyxy_box = 0, 0, width, height
                 else:
                     xyxy_box = last_box
-                anns.append(None)
+                coord_xys.append(None)
             
             yolo_pred_xyxy.append(xyxy_box)
         
@@ -95,7 +97,7 @@ def yolo_inference(image, video,
         
         last_xyxy = None
         last_rect_len = None
-        for idx, (frame, ann, xyxy, cls, prob) in enumerate(zip(frames, anns, yolo_pred_xyxy,
+        for idx, (frame, coord_xy, xyxy, cls, prob) in enumerate(zip(frames, coord_xys, yolo_pred_xyxy,
                                                                 class_list, prob_list)):
             height, width, _ = frame.shape
             
@@ -109,14 +111,13 @@ def yolo_inference(image, video,
                 y2 = min(height, y2 + OUT_EXPAND)
                 last_xyxy = x1, y1, x2, y2
             
-            if ann is not None:
-                min_rect_w, min_rect_h, _ = get_min_rect_len(ann)
-                rect_len = max(min_rect_w, min_rect_h)
+            if coord_xy is not None:
+                rect_len, _ = get_coord_min_rect_len(coord_xy)
                 last_rect_len = rect_len
             else:
                 rect_len = last_rect_len
             
-            if cls == 0 and not inserted and ann is not None:
+            if cls == 0 and not inserted and coord_xy is not None:
                 pixel_len_arr.append(rect_len)
                 if len(pixel_len_arr) > CONFIRMATION_FRAMES:
                     pixel_len_arr.pop(0)
@@ -128,7 +129,6 @@ def yolo_inference(image, video,
                     pixel_len_arr.append(rect_len)
             actual_len = INIT_SHAFT_LEN if cls == 0 else (
                     INIT_SHAFT_LEN * rect_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
-            print(rect_len, actual_len)
             
             # 判断是否开始插入皮肤
             if idx == insert_start_frame:
@@ -149,7 +149,7 @@ def yolo_inference(image, video,
             else:
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
             
-            mask = draw_masks_on_image(frame.shape, ann)
+            mask = get_coord_mask(frame.shape, coord_xy)
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
             combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
@@ -157,7 +157,7 @@ def yolo_inference(image, video,
         
         cap.release()
         out.release()
-        print("Start: ", insert_start_frame, " End: ", insert_spec_end_frame)
+        print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed}mm/s")
         
         return None, output_video_path
 
@@ -270,4 +270,4 @@ with gradio_app:
         with gr.Column():
             app()
 if __name__ == '__main__':
-    gradio_app.launch()
+    gradio_app.launch(ssl_verify=False)

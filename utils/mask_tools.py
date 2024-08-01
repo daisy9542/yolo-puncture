@@ -5,29 +5,44 @@ import io
 from PIL import Image
 
 
-def get_min_rect_len(seg_mask):
-    """计算掩码的最小外接矩形的长度，这里指的 `width`"""
+def get_coord_min_rect_len(coord_xy):
+    points = np.array(coord_xy, dtype=np.int32).reshape((-1, 2))
+    (_, (width, height), _) = cv2.minAreaRect(points)
+    return max(width, height), max(height, width) / min(height, width)
+
+
+def get_bi_min_rect_len(mask_bi):
+    """计算掩码的最小外接矩形的长度，这里指的较大的边"""
     # 找到掩码中所有像素点为 True 的坐标
-    points = np.column_stack(np.where(seg_mask)).astype(np.int32)
+    points = np.column_stack(np.where(mask_bi)).astype(np.int32)
     # 计算最小外接矩形 ((center_x, center_y), (width, height), angle)
     (_, (width, height), _) = cv2.minAreaRect(points)
-    ratio = width / height if height != 0 else 0
-    return width, height, ratio
+    return max(width, height), max(height, width) / min(height, width)
 
 
-def draw_masks_on_image(img_shape, ann, x_offset=0, y_offset=0):
+def get_coord_mask(image_shape, mask_xy, color=(255, 255, 0)):
+    """根据多边形坐标绘制掩码"""
+    mask = np.zeros(image_shape, dtype=np.uint8)
+    if mask_xy is None:
+        return mask
+    points = np.array(mask_xy, dtype=np.int32).reshape((-1, 1, 2))
+    cv2.fillPoly(mask, [points], color)
+    return mask
+
+
+def get_bi_mask(img_shape, mask_bi, x_offset=0, y_offset=0, color=(255, 255, 0)):
+    """根据二值掩码绘制分割掩码"""
     mask = np.zeros(img_shape, dtype=np.uint8)
     
-    if ann is None:
+    if mask_bi is None:
         return mask
     
     # color_mask = np.random.randint(0, 255, (3,), dtype=int)
-    color_mask = (255, 255, 0)
-    y_indices, x_indices = np.nonzero(ann)
+    y_indices, x_indices = np.nonzero(mask_bi)
     y_indices = y_indices + y_offset
     x_indices = x_indices + x_offset
     
-    mask[y_indices, x_indices] = color_mask
+    mask[y_indices, x_indices] = color
     
     return mask
 
@@ -83,7 +98,7 @@ def filter_masks(masks, topn=1):
         bbox = mask['bbox']
         area = mask['area']
         # 最小外接矩形长宽比越大，得分越高
-        width, height, ratio = get_min_rect_len(mask)
+        _, ratio = get_bi_min_rect_len(mask)
         scores[idx] += ratio
         # 物体中心点距离区域中心点越近，得分越高
         distance = np.sqrt(((bbox[0] + bbox[2] / 2) - ((crop_box[0] + crop_box[2]) / 2))**2

@@ -1,2 +1,3 @@
 PATH:
+  DATASETS_PATH: /home/puncture/datasets
   WEIGHTS_PATH: /home/puncture/weights
