@@ -144,7 +144,7 @@ def fix_class_prob(class_list, prob_list, class_index):
     return class_list, prob_list
 
 
-def predict_and_find_start_inserted(model, frames=[], boxes_list=[], judge_wnd=20, batch_size=8):
+def predict_and_find_start_inserted(model, frames=None, boxes_list=None, judge_wnd=20, batch_size=8):
     """
       功能：预测类别、概率和插入帧
       model
@@ -153,9 +153,13 @@ def predict_and_find_start_inserted(model, frames=[], boxes_list=[], judge_wnd=2
       batch_size 分类预测的批量大小
       return 索引
     """
+    if boxes_list is None:
+        boxes_list = []
+    if frames is None:
+        frames = []
     if len(frames) != len(boxes_list):
         raise ValueError("The length of frames and boxes_list must be the same.")
-    print("start predict all frames ... ")
+    print("Start predict all frames ... ")
     roi_list = []
     previous_box = None
     # print(f"frames length: {len(frames)}")

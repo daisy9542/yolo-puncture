@@ -1,7 +1,6 @@
 import gradio as gr
 import cv2
 import tempfile
-import torch
 import numpy as np
 
 from ultralytics import YOLO
@@ -15,7 +14,6 @@ INIT_SHAFT_LEN = 20  # 针梗的实际长度，单位为毫米
 MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
 CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
-
 
 
 def yolo_inference(image, video,
@@ -67,13 +65,13 @@ def yolo_inference(image, video,
             frames.append(frame)
             
             results = model.predict(source=frame, conf=yolo_conf_threshold)
-            pred_boxes = results[0].boxes
+            pred_boxes = results[0].boxes.cpu().numpy()
             height, width, _ = frame.shape
             
             if len(pred_boxes.cls) > 0:
                 # 若检测到多个物体，取置信度最大的
-                best_conf_idx = torch.argmax(pred_boxes.conf)
-                xyxy_box = pred_boxes.xyxy[best_conf_idx].squeeze().cpu()
+                best_conf_idx = np.argmax(pred_boxes.conf)
+                xyxy_box = pred_boxes.xyxy[best_conf_idx].squeeze()
                 xyxy_box = list(map(int, xyxy_box))
                 last_box = xyxy_box
                 seg_mask = results[0].masks.xy[best_conf_idx]
@@ -98,7 +96,7 @@ def yolo_inference(image, video,
         last_xyxy = None
         last_rect_len = None
         for idx, (frame, coord_xy, xyxy, cls, prob) in enumerate(zip(frames, coord_xys, yolo_pred_xyxy,
-                                                                class_list, prob_list)):
+                                                                     class_list, prob_list)):
             height, width, _ = frame.shape
             
             if inserted:
@@ -157,7 +155,7 @@ def yolo_inference(image, video,
         
         cap.release()
         out.release()
-        print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed}mm/s")
+        print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed:.2f}mm/s")
         
         return None, output_video_path
 
