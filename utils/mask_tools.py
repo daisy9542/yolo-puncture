@@ -8,7 +8,11 @@ from PIL import Image
 def get_coord_min_rect_len(coord_xy):
     points = np.array(coord_xy, dtype=np.int32).reshape((-1, 2))
     (_, (width, height), _) = cv2.minAreaRect(points)
-    return max(width, height), max(height, width) / min(height, width)
+    length = max(width, height)
+    width = min(height, width)
+    if width == 0:
+        width = 1
+    return length, length / width
 
 
 def get_bi_min_rect_len(mask_bi):
@@ -17,7 +21,11 @@ def get_bi_min_rect_len(mask_bi):
     points = np.column_stack(np.where(mask_bi)).astype(np.int32)
     # 计算最小外接矩形 ((center_x, center_y), (width, height), angle)
     (_, (width, height), _) = cv2.minAreaRect(points)
-    return max(width, height), max(height, width) / min(height, width)
+    length = max(width, height)
+    width = min(height, width)
+    if width == 0:
+        width = 1
+    return length, length / width
 
 
 def get_coord_mask(image_shape, mask_xy, color=(255, 255, 0)):

@@ -109,10 +109,14 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--yolo_model", type=str, default="seg/best.pt")
-    parser.add_argument("--classify_model", type=str, default="EfficientNet/EfficientNet_23.pkl")
-    parser.add_argument("--yolo_conf_threshold", type=float, default=0.35)
-    parser.add_argument("--judge_wnd", type=int, default=20)
+    parser.add_argument("-ym", "--yolo_model", type=str, default="seg/best.pt",
+                        help="Path to YOLO model, e.g. seg/best.pt")
+    parser.add_argument("-cm", "--classify_model", type=str, default="EfficientNet/EfficientNet_23.pkl",
+                        help="Path to classification model, e.g. EfficientNet/EfficientNet_23.pkl")
+    parser.add_argument("-yct", "--yolo_conf_threshold", type=float, default=0.35,
+                        help="YOLO confidence threshold, default is 0.35")
+    parser.add_argument("-jw", "--judge_wnd", type=int, default=20,
+                        help="Window size for judging inserted needle, default is 20")
     args = parser.parse_args()
     
     video_dir = os.path.join(CONFIG.PATH.DATASETS_PATH, "needle-seg/videos")
