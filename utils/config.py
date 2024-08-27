@@ -1,6 +1,6 @@
-
 import yaml
 import os
+
 
 class Dict2Obj:
     def __init__(self, d):
@@ -18,6 +18,7 @@ config_file_path = os.path.join(dir_path, '../config.yaml')
 with open(config_file_path, 'r') as f:
     yaml_cfg = yaml.load(f, Loader=yaml.FullLoader)
 config = Dict2Obj(yaml_cfg)
+
 
 def get_config():
     return config

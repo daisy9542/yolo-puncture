@@ -1,12 +1,25 @@
+import os
+
 import gradio as gr
 import cv2
+import re
 import tempfile
 import numpy as np
+import matplotlib.pyplot as plt
+import yaml
 
 from ultralytics import YOLO
+from detectron2 import model_zoo
+from detectron2.config import get_cfg
+from detectron2.engine import DefaultPredictor
+from detectron2.utils.visualizer import Visualizer, ColorMode
+from detectron2.data import MetadataCatalog
+
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
+from utils.speed_tools import plot_speeds, compute_metrics
+from dev_tools.toolbox import KEY_FRAME
 
 CONFIG = get_config()
 
@@ -23,15 +36,33 @@ def yolo_inference(image, video,
                    judge_wnd):
     model = YOLO(f'{yolo_model_id}')
     if image:
-        results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
-        # annotated_image = results[0].plot()
-        # print(results[0].masks.xy)
-        seg_coords = results[0].masks.xy[0]
+        # results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
+        # seg_coords = results[0].masks.xy[0]
         image = np.array(image)
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        mask = get_coord_mask(image.shape, seg_coords)
-        annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
-        return annotated_image[:, :, ::-1], None
+        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        # mask = get_coord_mask(image.shape, seg_coords)
+        # annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
+        # return annotated_image[:, :, ::-1], None, None
+        
+        cfg = get_cfg()
+        cfg.merge_from_file("output/config.yaml")
+        cfg.MODEL.WEIGHTS = "output/model_final.pth"
+        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.1
+        
+        # cfg = get_cfg()
+        # cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml"))
+        # cfg.MODEL.WEIGHTS = CONFIG.PATH.WEIGHTS_PATH + "/detectron2/COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.pkl"
+        # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7
+        
+        predictor = DefaultPredictor(cfg)
+        outputs = predictor(image)
+        instances = outputs["instances"].to("cpu")
+        # 处理结果
+        v = Visualizer(image[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), instance_mode=ColorMode.IMAGE)
+        v = v.draw_instance_predictions(predictions=instances)
+        annotated_image = v.get_image()[:, :, ::-1]
+        
+        return annotated_image, None, None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
         
@@ -93,8 +124,9 @@ def yolo_inference(image, video,
             judge_wnd=judge_wnd,
             batch_size=yolo_batch_size)
         
+        lens = []  # 存储像素长度
         last_xyxy = None
-        last_rect_len = None
+        last_rect_len = 0
         for idx, (frame, coord_xy, xyxy, cls, prob) in enumerate(zip(frames, coord_xys, yolo_pred_xyxy,
                                                                      class_list, prob_list)):
             height, width, _ = frame.shape
@@ -114,6 +146,7 @@ def yolo_inference(image, video,
                 last_rect_len = rect_len
             else:
                 rect_len = last_rect_len
+            lens.append(rect_len)
             
             if cls == 0 and not inserted and coord_xy is not None:
                 pixel_len_arr.append(rect_len)
@@ -157,7 +190,15 @@ def yolo_inference(image, video,
         out.release()
         print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed:.2f}mm/s")
         
-        return None, output_video_path
+        # 生成速度折线图
+        plt.figure()
+        match = re.search(r'\d+', os.path.basename(video))
+        num = int(match.group())
+        
+        chart_path = tempfile.mktemp(suffix=".png")
+        plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), KEY_FRAME[num], chart_path)
+        
+        return None, output_video_path, chart_path
 
 
 def app():
@@ -204,6 +245,7 @@ def app():
             with gr.Column():
                 output_image = gr.Image(type="numpy", label="Annotated Image", visible=False)
                 output_video = gr.Video(label="Annotated Video", visible=True)
+                output_chart = gr.Image(label="Shaft Speed Chart", visible=True)
         
         def update_visibility(input_type):
             image = gr.update(visible=True) if input_type == "Image" else gr.update(visible=False)
@@ -246,7 +288,7 @@ def app():
                     yolo_conf_threshold,
                     judge_wnd,
                     input_type],
-            outputs=[output_image, output_video],
+            outputs=[output_image, output_video, output_chart],
         )
 
 

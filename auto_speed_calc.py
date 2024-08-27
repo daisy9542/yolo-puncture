@@ -1,12 +1,16 @@
 import cv2
 import os
+import re
 import argparse
 import numpy as np
+import matplotlib.pyplot as plt
 
 from ultralytics import YOLO
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
-from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
+from utils.mask_tools import get_coord_min_rect_len
+from utils.speed_tools import plot_speeds, compute_metrics
+from dev_tools.toolbox import KEY_FRAME
 
 CONFIG = get_config()
 
@@ -16,12 +20,13 @@ CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 
 video_info_dict = {}
+deviations = {}
 
 
 def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_threshold,
-                  judge_wnd):
+                  judge_wnd, frame_interval):
     print(f"Processing video: {video_path}")
-    video_name = os.path.splitext(os.path.basename(video_path))
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
     model = YOLO(f'{yolo_model_id}')
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -70,13 +75,15 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         judge_wnd=judge_wnd,
         batch_size=yolo_batch_size)
     
-    last_rect_len = None
+    lens = []  # 存储像素长度
+    last_rect_len = 0
     for idx, (coord_xy, cls) in enumerate(zip(coord_xys, class_list)):
         if coord_xy is not None:
             rect_len, _ = get_coord_min_rect_len(coord_xy)
             last_rect_len = rect_len
         else:
             rect_len = last_rect_len
+        lens.append(rect_len)
         
         if cls == 0 and not inserted and coord_xy is not None:
             pixel_len_arr.append(rect_len)
@@ -105,10 +112,26 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         "end_frame": insert_spec_end_frame,
         "speed": spec_insert_speed
     }
+    
+    # 生成速度折线图
+    plt.figure()
+    match = re.search(r'\d+', video_name)
+    num = int(match.group())
+    chart_path = f"speeds_chart/{video_name}.png"
+    os.makedirs("speeds_chart", exist_ok=True)
+    plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), KEY_FRAME[num], chart_path)
+    deviations[video_name] = compute_metrics(
+        lens,
+        (insert_start_frame, insert_spec_end_frame),
+        KEY_FRAME[num],
+        fps)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    video_dir = os.path.join(CONFIG.PATH.DATASETS_PATH, "needle-seg/videos")
+    parser.add_argument("-p", "--path", type=str, default=video_dir,
+                        help="Path to video directory or file")
     parser.add_argument("-ym", "--yolo_model", type=str, default="seg/best.pt",
                         help="Path to YOLO model, e.g. seg/best.pt")
     parser.add_argument("-cm", "--classify_model", type=str, default="EfficientNet/EfficientNet_23.pkl",
@@ -117,13 +140,25 @@ if __name__ == '__main__':
                         help="YOLO confidence threshold, default is 0.35")
     parser.add_argument("-jw", "--judge_wnd", type=int, default=20,
                         help="Window size for judging inserted needle, default is 20")
+    parser.add_argument("-i", "--frame_interval", type=int, default=1,
+                        help="Frame interval for calculating speed, default is 1")
     args = parser.parse_args()
     
-    video_dir = os.path.join(CONFIG.PATH.DATASETS_PATH, "needle-seg/videos")
-    for video in os.listdir(video_dir):
-        if video.endswith(".mp4"):
-            video_path = os.path.join(video_dir, video)
-            process_video(video_path, args.yolo_model, args.classify_model,
-                          args.yolo_conf_threshold, args.judge_wnd)
+    if os.path.isdir(args.path):
+        for video in os.listdir(video_dir):
+            if video.endswith(".mp4"):
+                video_path = os.path.join(video_dir, video)
+                process_video(video_path, args.yolo_model, args.classify_model,
+                              args.yolo_conf_threshold, args.judge_wnd, args.frame_interval)
+    else:
+        process_video(args.path, args.yolo_model, args.classify_model,
+                      args.yolo_conf_threshold, args.judge_wnd, args.frame_interval)
     for video, info in video_info_dict.items():
         print(f"{video}:  {info['start_frame']}-{info['end_frame']}  {info['speed']:.2f}mm/s")
+    
+    for video, deviation in deviations.items():
+        print(f"{video}: {deviation[0]:.2f} {deviation[1]:.2f} {deviation[2]:.2f} {deviation[3]:.2f}")
+    
+    averages = [sum(values) / len(deviations) for values in zip(*deviations.values())]
+    print(f"Normal: {averages[0]:.2f}, Gaussian: {averages[1]:.2f}, "
+          f"Savitzky Golay: {averages[2]:.2f}, Median Filtering: {averages[3]:.2f}")
