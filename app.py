@@ -18,7 +18,7 @@ from detectron2.data import MetadataCatalog
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
-from utils.speed_tools import plot_speeds, compute_metrics
+from utils.speed_tools import plot_speeds, gaussian_smoothing
 from dev_tools.toolbox import KEY_FRAME
 
 CONFIG = get_config()
@@ -88,6 +88,8 @@ def yolo_inference(image, video,
         insert_start_frame, insert_spec_end_frame = None, None  # 记录插入皮肤的开始和指定结束所在帧
         spec_insert_speed = None  # 插入皮肤指定长度的速度
         speed_clac_compute = False  # 是否开始计算插入皮肤的速度
+        lens = []  # 存储像素长度
+        last_rect_len = 0
         
         while cap.isOpened():
             ret, frame = cap.read()
@@ -107,12 +109,16 @@ def yolo_inference(image, video,
                 last_box = xyxy_box
                 seg_mask = results[0].masks.xy[best_conf_idx]
                 coord_xys.append(seg_mask)
+                rect_len, _ = get_coord_min_rect_len(seg_mask)
+                last_rect_len = rect_len
+                lens.append(rect_len)
             else:
                 if last_box is None:
                     xyxy_box = 0, 0, width, height
                 else:
                     xyxy_box = last_box
                 coord_xys.append(None)
+                lens.append(last_rect_len)
             
             yolo_pred_xyxy.append(xyxy_box)
         
@@ -124,11 +130,10 @@ def yolo_inference(image, video,
             judge_wnd=judge_wnd,
             batch_size=yolo_batch_size)
         
-        lens = []  # 存储像素长度
         last_xyxy = None
-        last_rect_len = 0
-        for idx, (frame, coord_xy, xyxy, cls, prob) in enumerate(zip(frames, coord_xys, yolo_pred_xyxy,
-                                                                     class_list, prob_list)):
+        smooth_lens = gaussian_smoothing(lens)
+        for idx, (frame, coord_xy, rect_len, xyxy, cls, prob) in enumerate(
+                zip(frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)):
             height, width, _ = frame.shape
             
             if inserted:
@@ -140,13 +145,6 @@ def yolo_inference(image, video,
                 x2 = min(width, x2 + OUT_EXPAND)
                 y2 = min(height, y2 + OUT_EXPAND)
                 last_xyxy = x1, y1, x2, y2
-            
-            if coord_xy is not None:
-                rect_len, _ = get_coord_min_rect_len(coord_xy)
-                last_rect_len = rect_len
-            else:
-                rect_len = last_rect_len
-            lens.append(rect_len)
             
             if cls == 0 and not inserted and coord_xy is not None:
                 pixel_len_arr.append(rect_len)

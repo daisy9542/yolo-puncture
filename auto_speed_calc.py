@@ -6,10 +6,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from ultralytics import YOLO
+from ultralytics.utils.metrics import smooth
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from utils.mask_tools import get_coord_min_rect_len
-from utils.speed_tools import plot_speeds, compute_metrics
+from utils.speed_tools import plot_speeds, compute_metrics, gaussian_smoothing
 from dev_tools.toolbox import KEY_FRAME
 
 CONFIG = get_config()
@@ -40,6 +41,8 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
     inserted = False
     insert_start_frame, insert_spec_end_frame = None, None
     spec_insert_speed = None
+    lens = []
+    last_rect_len = 0
     
     while cap.isOpened():
         ret, frame = cap.read()
@@ -58,12 +61,16 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
             last_box = xyxy_box
             seg_mask = results[0].masks.xy[best_conf_idx]
             coord_xys.append(seg_mask)
+            rect_len, _ = get_coord_min_rect_len(seg_mask)
+            last_rect_len = rect_len
+            lens.append(rect_len)
         else:
             if last_box is None:
                 xyxy_box = 0, 0, width, height
             else:
                 xyxy_box = last_box
             coord_xys.append(None)
+            lens.append(last_rect_len)
         
         yolo_pred_xyxy.append(xyxy_box)
     
@@ -75,17 +82,9 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         judge_wnd=judge_wnd,
         batch_size=yolo_batch_size)
     
-    lens = []  # 存储像素长度
-    last_rect_len = 0
-    for idx, (coord_xy, cls) in enumerate(zip(coord_xys, class_list)):
-        if coord_xy is not None:
-            rect_len, _ = get_coord_min_rect_len(coord_xy)
-            last_rect_len = rect_len
-        else:
-            rect_len = last_rect_len
-        lens.append(rect_len)
-        
-        if cls == 0 and not inserted and coord_xy is not None:
+    smooth_lens = gaussian_smoothing(lens)
+    for idx, (rect_len, cls) in enumerate(zip(smooth_lens, class_list)):
+        if cls == 0 and not inserted:
             pixel_len_arr.append(rect_len)
             if len(pixel_len_arr) > CONFIRMATION_FRAMES:
                 pixel_len_arr.pop(0)
