@@ -2,6 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+from utils.config import get_config
+
+CONFIG = get_config()
 
 
 def show_mask(mask, ax):
@@ -71,7 +74,7 @@ def segment(image, model_type="vit_l", device="cuda"):
     vit_l: ViT-L SAM model, sam_vit_l_0b3195.pth (large)
     vit_b: ViT-B SAM model, sam_vit_b_01ec64.pth (base)
     """
-    sam_checkpoint = f"weights/sam/sam_{model_type}.pth"
+    sam_checkpoint = f"{CONFIG.PATH.WEIGHTS_PATH}/sam/sam_{model_type}.pth"
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
     
