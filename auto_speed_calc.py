@@ -25,7 +25,7 @@ deviations = {}
 
 
 def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_threshold,
-                  judge_wnd, frame_interval):
+                  judge_wnd):
     print(f"Processing video: {video_path}")
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     model = YOLO(f'{yolo_model_id}')
@@ -102,14 +102,15 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
             inserted = False
             insert_spec_end_frame = idx
-            interval_time = (insert_spec_end_frame - insert_start_frame) / fps
+            print(insert_start_frame, insert_spec_end_frame, fps)
+            interval_time = max(1, insert_spec_end_frame - insert_start_frame) / fps
             spec_insert_speed = MOVE_THRESHOLD / interval_time
     
     cap.release()
     video_info_dict[video_name] = {
         "start_frame": insert_start_frame,
         "end_frame": insert_spec_end_frame,
-        "speed": spec_insert_speed
+        "speed": spec_insert_speed,
     }
     
     # 生成速度折线图
@@ -118,7 +119,8 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
     num = int(match.group())
     chart_path = f"speeds_chart/{video_name}.png"
     os.makedirs("speeds_chart", exist_ok=True)
-    plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), KEY_FRAME[num], chart_path)
+    actual_start, actual_end = KEY_FRAME.get(num, (-1, -1))
+    plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), [actual_start, actual_end], chart_path)
     deviations[video_name] = compute_metrics(
         lens,
         (insert_start_frame, insert_spec_end_frame),
@@ -144,20 +146,21 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if os.path.isdir(args.path):
-        for video in os.listdir(video_dir):
+        for video in os.listdir(args.path):
             if video.endswith(".mp4"):
-                video_path = os.path.join(video_dir, video)
+                video_path = os.path.join(args.path, video)
                 process_video(video_path, args.yolo_model, args.classify_model,
-                              args.yolo_conf_threshold, args.judge_wnd, args.frame_interval)
+                              args.yolo_conf_threshold, args.judge_wnd)
     else:
         process_video(args.path, args.yolo_model, args.classify_model,
-                      args.yolo_conf_threshold, args.judge_wnd, args.frame_interval)
+                      args.yolo_conf_threshold, args.judge_wnd)
     for video, info in video_info_dict.items():
         print(f"{video}:  {info['start_frame']}-{info['end_frame']}  {info['speed']:.2f}mm/s")
     
     for video, deviation in deviations.items():
-        print(f"{video}: {deviation[0]:.2f} {deviation[1]:.2f} {deviation[2]:.2f} {deviation[3]:.2f}")
+        print(f"{video} - Gaussian: {deviation[1]:.2f}, Normal: {deviation[0]:.2f}, "
+              f"Savitzky Golay: {deviation[2]:.2f}")
     
     averages = [sum(values) / len(deviations) for values in zip(*deviations.values())]
-    print(f"Normal: {averages[0]:.2f}, Gaussian: {averages[1]:.2f}, "
-          f"Savitzky Golay: {averages[2]:.2f}, Median Filtering: {averages[3]:.2f}")
+    print(f"Avg - Gaussian: {averages[1]:.2f}, Normal: {averages[0]:.2f}, "
+          f"Savitzky Golay: {averages[2]:.2f}")

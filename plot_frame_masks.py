@@ -1,3 +1,7 @@
+"""
+为视频中的帧图像提供交互式的掩码标注和保存功能，
+通过点击图像来选择目标区域，并将该区域的掩码保存下来
+"""
 import cv2
 import numpy as np
 import pickle
@@ -73,6 +77,8 @@ def process_and_save_masks(video_num):
     
     for img_name, anns in all_masks.items():
         frame_num = int(img_name.split('_')[-1].split('.')[0])
+        if img_name.startswith("video"):
+            img_name = img_name.replace("video", "").replace("_", "", 1)
         image_path = f"images/{img_name}"
         image = cv2.imread(image_path)
         height, width, _ = image.shape
@@ -124,7 +130,7 @@ def process_and_save_masks(video_num):
 
 # 点击的时候尽量点中心点，也就是数字显示的位置，因为会根据点击的坐标来过滤不合适的图片的 masks
 if __name__ == '__main__':
-    video_num = 6
+    video_num = 14
     # for video_num in range(1, 20):
     start_frame, end_frame = KEY_FRAME[video_num]
     process_and_save_masks(video_num)

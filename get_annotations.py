@@ -37,6 +37,7 @@ def process_video(video_files, output_dir, topn):
                     "bbox": mask["bbox"]
                 })
             
+            video_num = video_num.replace("video", "")
             filename = f"{video_num}_frame_{frame_num}.jpg"
             video_masks[filename] = polygon_masks
             frame_num += 1

@@ -3,9 +3,9 @@ import numpy as np
 import os
 
 # 视频路径
-video_path = "datasets/videos/video17.mp4"
+video_path = "../datasets/videos/video10.mp4"
 # 保存图片的文件夹
-image_folder = f"extracted_frames/video17/"
+image_folder = f"extracted_frames/video10/"
 os.makedirs(image_folder, exist_ok=True)
 
 # 提取视频帧并保存为图片

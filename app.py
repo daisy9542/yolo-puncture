@@ -168,7 +168,7 @@ def yolo_inference(image, video,
                 inserted = False
                 speed_clac_compute = True
                 insert_spec_end_frame = idx
-                interval_time = (insert_spec_end_frame - insert_start_frame) / fps
+                interval_time = max(1, insert_spec_end_frame - insert_start_frame) / fps
                 spec_insert_speed = MOVE_THRESHOLD / interval_time
             
             if speed_clac_compute:
@@ -194,7 +194,8 @@ def yolo_inference(image, video,
         num = int(match.group())
         
         chart_path = tempfile.mktemp(suffix=".png")
-        plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), KEY_FRAME[num], chart_path)
+        actual_start, actual_end = KEY_FRAME.get(num, (-1, -1))
+        plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), [actual_start, actual_end], chart_path)
         
         return None, output_video_path, chart_path
 

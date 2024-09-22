@@ -3,6 +3,7 @@ import numpy as np
 
 
 def get_coord_min_rect_len(coord_xy):
+    """计算多边形坐标的最小外接矩形的长度，这里指的较大的边"""
     points = np.array(coord_xy, dtype=np.int32).reshape((-1, 2))
     if len(points) < 3:
         return 0, 0
