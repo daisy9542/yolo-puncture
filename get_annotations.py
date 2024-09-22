@@ -2,6 +2,7 @@ import os
 import cv2
 import argparse
 import pickle
+from tqdm import tqdm  # 引入tqdm
 from utils.config import get_config
 from utils.segment_everything import segment
 from utils.mask_tools import filter_masks
@@ -11,7 +12,7 @@ CONFIG = get_config()
 
 
 def process_video(video_files, output_dir, topn):
-    for video_file in video_files:
+    for video_file in tqdm(video_files, desc="Processing videos", unit="video"):
         video_capture = cv2.VideoCapture(video_file)
         video_num = os.path.basename(video_file).split('.')[0]  # 从文件名中获取视频编号
         
@@ -20,7 +21,8 @@ def process_video(video_files, output_dir, topn):
         video_masks = {}
         
         frame_num = 0
-        while True:
+        total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))  # 获取视频总帧数
+        for _ in tqdm(range(total_frames), desc=f"Processing {video_num}", unit="frame", leave=False):
             ret, frame = video_capture.read()  # 逐帧读取视频
             if not ret:
                 break  # 读取到视频末尾时退出

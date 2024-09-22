@@ -1,12 +1,11 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-import io
-from PIL import Image
 
 
 def get_coord_min_rect_len(coord_xy):
     points = np.array(coord_xy, dtype=np.int32).reshape((-1, 2))
+    if len(points) < 3:
+        return 0, 0
     (_, (width, height), _) = cv2.minAreaRect(points)
     length = max(width, height)
     width = min(height, width)
@@ -20,6 +19,8 @@ def get_bi_min_rect_len(mask_bi):
     # 找到掩码中所有像素点为 True 的坐标
     points = np.column_stack(np.where(mask_bi)).astype(np.int32)
     # 计算最小外接矩形 ((center_x, center_y), (width, height), angle)
+    if len(points) < 3:
+        return 0, 0
     (_, (width, height), _) = cv2.minAreaRect(points)
     length = max(width, height)
     width = min(height, width)
