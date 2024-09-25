@@ -2,7 +2,7 @@ import os
 import cv2
 import argparse
 import pickle
-from tqdm import tqdm  # 引入tqdm
+from tqdm import tqdm
 from utils.config import get_config
 from utils.segment_everything import segment
 from utils.mask_tools import filter_masks
@@ -38,7 +38,7 @@ def process_video(video_files, output_dir, topn):
                 })
             
             video_num = video_num.replace("video", "")
-            filename = f"{video_num}_frame_{frame_num}.jpg"
+            filename = f"{video_num}frame_{frame_num}.jpg"
             video_masks[filename] = polygon_masks
             frame_num += 1
         
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="segment annotations from video")
     parser.add_argument('--video_files', type=str, required=True, help="视频文件路径，多个文件以逗号分隔")
     parser.add_argument('--output_dir', type=str, default="segment_anns", help="输出目录")
-    parser.add_argument('--topn', type=int, default=7, help="筛选的掩码数量")
+    parser.add_argument('--topn', type=int, default=15, help="筛选的掩码数量")
     args = parser.parse_args()
     
     video_files = []
@@ -59,4 +59,6 @@ if __name__ == "__main__":
             for file in files:
                 if file.endswith(".mp4"):
                     video_files.append(os.path.join(root, file))
+    else:
+        video_files.append(args.video_files)
     process_video(video_files, args.output_dir, args.topn)

@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 import pickle
 import os
-from dev_tools.toolbox import KEY_FRAME
 
 CONF_DIS = 20  # 距离置信度阈值，当前 masks 中任意 mask 距离上一次选中的点均大于这个值则直接跳过
 
@@ -74,7 +73,7 @@ def process_and_save_masks(video_num):
     prev_click_point = None
     os.makedirs(f"annotations/images", exist_ok=True)
     os.makedirs(f"annotations/labels", exist_ok=True)
-    
+    print(all_masks.keys())
     for img_name, anns in all_masks.items():
         frame_num = int(img_name.split('_')[-1].split('.')[0])
         if img_name.startswith("video"):
@@ -98,10 +97,9 @@ def process_and_save_masks(video_num):
         if skip_image:
             continue
         
-        start_frame, end_frame = KEY_FRAME[video_num]
         image_with_masks = show_image_with_masks(
             image, anns,
-            f"Video {video_num} frame {frame_num} ({start_frame}-{end_frame})")
+            f"Video {video_num} frame {frame_num}")
         
         cv2.imshow('Image with Masks', image_with_masks)
         cv2.setMouseCallback('Image with Masks', mouse_callback)
@@ -132,5 +130,4 @@ def process_and_save_masks(video_num):
 if __name__ == '__main__':
     video_num = 14
     # for video_num in range(1, 20):
-    start_frame, end_frame = KEY_FRAME[video_num]
     process_and_save_masks(video_num)
