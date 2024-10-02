@@ -11,7 +11,7 @@ class Dict2Obj:
 
 
 dir_path = os.path.dirname(os.path.abspath(__file__))
-config_file_path = os.path.join(dir_path, '../config.yaml')
+config_file_path = os.path.join(dir_path, '../../config.yaml')
 # print(config_file_path)
 
 # yaml配置文件
