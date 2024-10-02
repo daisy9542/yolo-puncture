@@ -4,3 +4,6 @@
 [submodule "segment_anything"]
 	path = segment_anything
 	url = https://github.com/facebookresearch/segment-anything.git
+[submodule "DEVA"]
+	path = DEVA
+	url = https://github.com/hkchengrex/Tracking-Anything-with-DEVA.git
