@@ -1,5 +1,5 @@
-[submodule "DEVA"]
-	path = DEVA
+[submodule "deva"]
+	path = deva
 	url = https://github.com/hkchengrex/Tracking-Anything-with-DEVA.git
 [submodule "thinplate"]
 	path = thinplate
