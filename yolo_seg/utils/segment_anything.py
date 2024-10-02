@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
-from utils.config import get_config
+from .config import get_config
 
 CONFIG = get_config()
 

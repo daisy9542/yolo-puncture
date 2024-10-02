@@ -7,7 +7,7 @@ import numpy as np
 import pickle
 import os
 
-CONF_DIS = 20  # 距离置信度阈值，当前 masks 中任意 mask 距离上一次选中的点均大于这个值则直接跳过
+# CONF_DIS = 20  # 距离置信度阈值，当前 masks 中任意 mask 距离上一次选中的点均大于这个值则直接跳过
 
 
 def normalize_to_pixel_coordinates(normalized_coords, img_width, img_height):
@@ -71,8 +71,8 @@ def process_and_save_masks(video_num):
         all_masks = pickle.load(f)
     
     prev_click_point = None
-    os.makedirs(f"annotations/images", exist_ok=True)
-    os.makedirs(f"annotations/labels", exist_ok=True)
+    os.makedirs(f"../annotations/images", exist_ok=True)
+    os.makedirs(f"../annotations/labels", exist_ok=True)
     print(all_masks.keys())
     for img_name, anns in all_masks.items():
         frame_num = int(img_name.split('_')[-1].split('.')[0])
@@ -82,20 +82,20 @@ def process_and_save_masks(video_num):
         image = cv2.imread(image_path)
         height, width, _ = image.shape
         
-        skip_image = True
-        if prev_click_point is None:
-            skip_image = False
-        else:
-            for ann in anns:
-                x, y, w, h = ann["bbox"]
-                center_x, center_y = (x + w / 2, y + h / 2)
-                if prev_click_point:
-                    dist = np.sqrt((center_x - prev_click_point[0])**2 + (center_y - prev_click_point[1])**2)
-                    if dist <= CONF_DIS:
-                        skip_image = False
-                        break
-        if skip_image:
-            continue
+        # skip_image = True
+        # if prev_click_point is None:
+        #     skip_image = False
+        # else:
+        #     for ann in anns:
+        #         x, y, w, h = ann["bbox"]
+        #         center_x, center_y = (x + w / 2, y + h / 2)
+        #         if prev_click_point:
+        #             dist = np.sqrt((center_x - prev_click_point[0])**2 + (center_y - prev_click_point[1])**2)
+        #             if dist <= CONF_DIS:
+        #                 skip_image = False
+        #                 break
+        # if skip_image:
+        #     continue
         
         image_with_masks = show_image_with_masks(
             image, anns,
@@ -128,6 +128,6 @@ def process_and_save_masks(video_num):
 
 # 点击的时候尽量点中心点，也就是数字显示的位置，因为会根据点击的坐标来过滤不合适的图片的 masks
 if __name__ == '__main__':
-    video_num = 14
+    video_num = 19
     # for video_num in range(1, 20):
     process_and_save_masks(video_num)

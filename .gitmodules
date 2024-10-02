@@ -1,0 +1,9 @@
+[submodule "DEVA"]
+	path = DEVA
+	url = https://github.com/hkchengrex/Tracking-Anything-with-DEVA.git
+[submodule "thinplate"]
+	path = thinplate
+	url = https://github.com/cheind/py-thin-plate-spline.git
+[submodule "segment_anything"]
+	path = segment_anything
+	url = https://github.com/facebookresearch/segment-anything.git

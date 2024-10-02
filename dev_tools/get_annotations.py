@@ -3,9 +3,9 @@ import cv2
 import argparse
 import pickle
 from tqdm import tqdm
-from utils.config import get_config
-from utils.segment_everything import segment
-from utils.mask_tools import filter_masks
+from yolo_seg.utils.config import get_config
+from yolo_seg.utils.segment_anything import segment
+from yolo_seg.utils.mask_tools import filter_masks
 from dev_tools.toolbox import polygon_encoding
 
 CONFIG = get_config()

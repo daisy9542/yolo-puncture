@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 
-from utils.config import get_config
+from .config import get_config
 
 CONFIG = get_config()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

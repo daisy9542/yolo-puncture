@@ -6,14 +6,8 @@ import re
 import tempfile
 import numpy as np
 import matplotlib.pyplot as plt
-import yaml
 
 from ultralytics import YOLO
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-from detectron2.engine import DefaultPredictor
-from detectron2.utils.visualizer import Visualizer, ColorMode
-from detectron2.data import MetadataCatalog
 
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
@@ -36,33 +30,13 @@ def yolo_inference(image, video,
                    judge_wnd):
     model = YOLO(f'{yolo_model_id}')
     if image:
-        # results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
-        # seg_coords = results[0].masks.xy[0]
+        results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
+        seg_coords = results[0].masks.xy[0]
         image = np.array(image)
-        # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        # mask = get_coord_mask(image.shape, seg_coords)
-        # annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
-        # return annotated_image[:, :, ::-1], None, None
-        
-        cfg = get_cfg()
-        cfg.merge_from_file("output/config.yaml")
-        cfg.MODEL.WEIGHTS = "output/model_final.pth"
-        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.1
-        
-        # cfg = get_cfg()
-        # cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml"))
-        # cfg.MODEL.WEIGHTS = CONFIG.PATH.WEIGHTS_PATH + "/detectron2/COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.pkl"
-        # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.7
-        
-        predictor = DefaultPredictor(cfg)
-        outputs = predictor(image)
-        instances = outputs["instances"].to("cpu")
-        # 处理结果
-        v = Visualizer(image[:, :, ::-1], MetadataCatalog.get(cfg.DATASETS.TRAIN[0]), instance_mode=ColorMode.IMAGE)
-        v = v.draw_instance_predictions(predictions=instances)
-        annotated_image = v.get_image()[:, :, ::-1]
-        
-        return annotated_image, None, None
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        mask = get_coord_mask(image.shape, seg_coords)
+        annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
+        return annotated_image[:, :, ::-1], None, None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
         
@@ -76,7 +50,7 @@ def yolo_inference(image, video,
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         output_video_path = tempfile.mktemp(suffix=".mp4")
-        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
+        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter.fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
         yolo_pred_xyxy = []  # yolo 预测的目标位置信息
         coord_xys = []  # 实例分割标注数组

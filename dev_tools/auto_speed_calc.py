@@ -6,12 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from ultralytics import YOLO
-from ultralytics.utils.metrics import smooth
-from utils.config import get_config
-from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
-from utils.mask_tools import get_coord_min_rect_len
-from utils.speed_tools import plot_speeds, compute_metrics, gaussian_smoothing
-from dev_tools.toolbox import KEY_FRAME
+from yolo_seg.utils.config import get_config
+from yolo_seg.utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
+from yolo_seg.utils.mask_tools import get_coord_min_rect_len
+from yolo_seg.utils.speed_tools import plot_speeds, compute_metrics, gaussian_smoothing
 
 CONFIG = get_config()
 
@@ -118,13 +116,11 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
     match = re.search(r'\d+', video_name)
     num = int(match.group())
     chart_path = f"speeds_chart/{video_name}.png"
-    os.makedirs("speeds_chart", exist_ok=True)
-    actual_start, actual_end = KEY_FRAME.get(num, (-1, -1))
+    os.makedirs("../resources/speeds_chart", exist_ok=True)
     plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), [actual_start, actual_end], chart_path)
     deviations[video_name] = compute_metrics(
         lens,
         (insert_start_frame, insert_spec_end_frame),
-        KEY_FRAME[num],
         fps)
 
 
