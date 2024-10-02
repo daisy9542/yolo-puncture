@@ -1,0 +1,21 @@
+[project]
+name = "yolo-puncture"
+description = "YOLO for puncture detection"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { "text" = "AGPL-3.0" }
+keywords = ["yolo", "puncture", "object-detection", "deep-learning", "computer-vision", "video-instance-segmentation"]
+dependencies = [
+    "gradio",
+    "numpy",
+    "torch",
+    "torchvision",
+    "opencv-python",
+    "tqdm",
+    "scipy",
+    "matplotlib",
+    "scikit-learn",
+    "PyYAML",
+    "pillow",
+    "efficientnet_pytorch"
+]
