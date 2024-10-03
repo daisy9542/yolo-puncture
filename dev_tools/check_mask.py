@@ -6,6 +6,8 @@ import os
 import cv2
 import numpy as np
 
+from toolbox import sort_by_filename
+
 
 def draw_polygon(image, points):
     height, width = image.shape[:2]
@@ -17,7 +19,8 @@ if __name__ == '__main__':
     images_dir = f"resources/annotations/images"
     labels_dir = f"resources/annotations/labels"
     
-    image_files = [f for f in os.listdir(images_dir) if f.endswith('.jpg')]
+    image_files = sorted([f for f in os.listdir(images_dir) if f.endswith('.jpg')],
+                         key=sort_by_filename)
     i = 0
     total = len(image_files)
     
@@ -48,5 +51,5 @@ if __name__ == '__main__':
             if i > 0:
                 i -= 1
             continue
-        i+=1
+        i += 1
         cv2.destroyAllWindows()
