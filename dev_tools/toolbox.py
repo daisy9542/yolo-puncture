@@ -1,8 +1,9 @@
 """
-视频的关键帧字典。
+视频的关键帧字典和一些实用工具。
 """
 import numpy as np
 import cv2
+import re
 
 KEY_FRAME = {
     # video_num: [start_frame, end_frame]
@@ -65,3 +66,11 @@ def polygon_encoding(binary_segment, normalize=True):
         polygons.extend(contour)
     
     return polygons
+
+
+def sort_by_filename(filename):
+    """1frame_1.jpg"""
+    match = re.match(r"(\d+)\D+(\d+)\.(jpg|txt)", filename)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return 0, 0
