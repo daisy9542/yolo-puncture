@@ -1,3 +1,7 @@
+"""
+手动标注图片两点，自动计算两点之间的距离。
+用于手工测算针梗长度。
+"""
 import cv2
 import numpy as np
 import os

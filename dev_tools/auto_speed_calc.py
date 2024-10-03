@@ -1,3 +1,7 @@
+"""
+自动计算指定视频或者目录下所有视频的针梗穿刺速度，并计算误差（如果参考值可用）。
+该文件需要与 `yolo_seg/app.py` 同步。
+"""
 import cv2
 import os
 import re

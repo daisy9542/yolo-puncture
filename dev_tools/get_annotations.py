@@ -1,3 +1,6 @@
+"""
+使用 Segment Anything 对视频帧进行分割，并以 pkl 格式保存结果。
+"""
 import os
 import cv2
 import argparse

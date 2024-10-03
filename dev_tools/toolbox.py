@@ -1,3 +1,6 @@
+"""
+视频的关键帧字典。
+"""
 import numpy as np
 import cv2
 
