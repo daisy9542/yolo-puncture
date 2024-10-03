@@ -52,7 +52,7 @@ def process_video(video_files, output_dir, topn):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="segment annotations from video")
     parser.add_argument('--video_files', type=str, required=True, help="视频文件路径，多个文件以逗号分隔")
-    parser.add_argument('--output_dir', type=str, default="segment_anns", help="输出目录")
+    parser.add_argument('--output_dir', type=str, default="resources/segment_anns", help="输出目录")
     parser.add_argument('--topn', type=int, default=15, help="筛选的掩码数量")
     args = parser.parse_args()
     

@@ -16,28 +16,28 @@ def draw_polygon(image, points):
     points = (points * [width, height]).reshape((-1, 1, 2)).astype(np.int32)
     cv2.polylines(image, [points], isClosed=True, color=(0, 255, 0), thickness=2)
 
-for path in ["train", "val"]:
-    images_dir = f"{DATASETS_DIR}/needle-seg/images/{path}"
-    labels_dir = f"{DATASETS_DIR}/needle-seg/labels/{path}"
-
+if __name__ == '__main__':
+    images_dir = f"resources/annotations/images"
+    labels_dir = f"resources/annotations/labels"
+    
     image_files = [f for f in os.listdir(images_dir) if f.endswith('.jpg')]
-
+    
     for image_file in image_files:
         image_path = os.path.join(images_dir, image_file)
         label_path = os.path.join(labels_dir, image_file.replace('.jpg', '.txt'))
-
+    
         image = cv2.imread(image_path)
-
+    
         with open(label_path, 'r') as f:
             for line in f:
                 values = line.strip().split()
                 class_id = int(values[0])
                 polygon_points = np.array([float(v) for v in values[1:]]).reshape(-1, 2)
                 draw_polygon(image, polygon_points)
-
+    
         cv2.imshow(f"Image: {image_file}", image)
         key = cv2.waitKey(0)
-
+    
         if key == ord('d'):
             os.remove(image_path)
             os.remove(label_path)
