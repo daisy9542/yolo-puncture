@@ -1,7 +1,13 @@
 from ultralytics import YOLO
+from yolo_seg.utils.config import get_config
 
-# Load a model
-model = YOLO("yolov8n-seg.pt")  # Load a pretrained model (recommended for training)
+CONFIG = get_config()
 
-# Train the model
-results = model.train(data="/home/puncture/datasets/needle-seg/data.yaml", epochs=100, imgsz=640)
+if __name__ == '__main__':
+    # Load a model
+    model = YOLO(f"{CONFIG.PATH.WEIGHTS_PATH}/seg/yolo11n-seg.pt")  # Load a pretrained model (recommended for training)
+    
+    # Train the model
+    # results = model.train(data=f"{CONFIG.PATH.DATASETS_PATH}/needle-seg/data.yaml", epochs=100, imgsz=640)
+    # `workers=0` 单进程运行避免多进程间共享 Tensor 的动态链接库加载 shm.dll 出错
+    results = model.train(data=f"{CONFIG.PATH.DATASETS_PATH}/needle-seg/data.yaml", epochs=100, imgsz=640, workers=0)

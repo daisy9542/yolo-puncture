@@ -18,7 +18,8 @@ dependencies = [
     "scikit-learn",
     "PyYAML",
     "pillow",
-    "efficientnet_pytorch"
+    "efficientnet_pytorch",
+    "lapx"
 ]
 
 [tool.setuptools]

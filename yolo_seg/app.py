@@ -28,7 +28,7 @@ def yolo_inference(image, video,
                    classify_model_id,
                    yolo_conf_threshold,
                    judge_wnd):
-    model = YOLO(f'{yolo_model_id}')
+    model = YOLO(f'{CONFIG.PATH.WEIGHTS_PATH}/{yolo_model_id}')
     if image:
         results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
         seg_coords = results[0].masks.xy[0]
@@ -188,7 +188,10 @@ def app():
                 yolo_model_id = gr.Dropdown(
                     label="YOLO Model",
                     choices=[
-                        "seg/best.pt"
+                        "seg/best.pt",
+                        "seg/yolov8n-seg.pt",
+                        "seg/yolo11n-seg.pt",
+                        "seg/yolo11x-seg.pt",
                     ],
                     value="seg/best.pt",
                 )
