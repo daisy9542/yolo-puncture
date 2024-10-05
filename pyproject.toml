@@ -24,33 +24,3 @@ dependencies = [
 
 [tool.setuptools]
 packages = ["DEVA", "thinplate", "ultralytics", "segment_anything"]
-opencv-python
-numpy
-matplotlib
-scikit-learn
-ultralytics
-gradio
-torch
-tqdm
-deva
-torchvision
-segment-anything
-thinplate
-pillow
-pycocotools
-scipy
-supervision
-pulp
-gurobipy
-gdown
-hickle
-yaml
-pyyaml
-efficientnet-pytorch
-setuptools
-beautifulsoup4
-transformers
-thop
-ultralytics-thop
-requests
-psutil

@@ -188,12 +188,11 @@ def app():
                 yolo_model_id = gr.Dropdown(
                     label="YOLO Model",
                     choices=[
-                        "seg/best.pt",
-                        "seg/yolov8n-seg.pt",
-                        "seg/yolo11n-seg.pt",
-                        "seg/yolo11x-seg.pt",
+                        "seg/yolov8n-seg-finetune.pt",
+                        "seg/yolo11n-seg-finetune.pt",
+                        "seg/yolo11x-seg-finetune.pt",
                     ],
-                    value="seg/best.pt",
+                    value="seg/yolo11x-seg-finetune.pt",
                 )
                 classify_model_id = gr.Dropdown(
                     label="Classify Model",
