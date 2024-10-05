@@ -215,7 +215,7 @@ def app():
                     step=5,
                     value=20,
                 )
-                yolov10_infer = gr.Button(value="Detect Objects")
+                yolo_infer = gr.Button(value="Detect Objects")
             
             with gr.Column():
                 output_image = gr.Image(type="numpy", label="Annotated Image", visible=False)
@@ -255,7 +255,7 @@ def app():
                                       yolo_conf_threshold=yolo_conf_threshold,
                                       judge_wnd=judge_wnd)
         
-        yolov10_infer.click(
+        yolo_infer.click(
             fn=run_inference,
             inputs=[image, video,
                     yolo_model_id,
@@ -275,12 +275,6 @@ with gradio_app:
     Puncture Detection
     </h1>
     """)
-    # gr.HTML(
-    #     """
-    #     <h3 style='text-align: center'>
-    #     <a href='https://arxiv.org/abs/2405.14458' target='_blank'>arXiv</a> | <a href='https://github.com/THU-MIG/yolov10' target='_blank'>github</a>
-    #     </h3>
-    #     """)
     with gr.Row():
         with gr.Column():
             app()
