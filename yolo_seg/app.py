@@ -13,7 +13,6 @@ from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
 from utils.speed_tools import plot_speeds, gaussian_smoothing
-from dev_tools.toolbox import KEY_FRAME
 
 CONFIG = get_config()
 
@@ -162,16 +161,13 @@ def yolo_inference(image, video,
         out.release()
         print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed:.2f}mm/s")
         
-        # 生成速度折线图
-        plt.figure()
-        match = re.search(r'\d+', os.path.basename(video))
-        num = int(match.group())
-        
-        chart_path = tempfile.mktemp(suffix=".png")
-        actual_start, actual_end = KEY_FRAME.get(num, (-1, -1))
-        plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), [actual_start, actual_end], chart_path)
-        
-        return None, output_video_path, chart_path
+        # # 生成速度折线图
+        # plt.figure()
+        #
+        # chart_path = tempfile.mktemp(suffix=".png")
+        # plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), file_path=chart_path)
+        #
+        return None, output_video_path, None
 
 
 def app():
@@ -192,7 +188,7 @@ def app():
                         "seg/yolo11n-seg-finetune.pt",
                         "seg/yolo11x-seg-finetune.pt",
                     ],
-                    value="seg/yolo11x-seg-finetune.pt",
+                    value="seg/yolo11n-seg-finetune.pt",
                 )
                 classify_model_id = gr.Dropdown(
                     label="Classify Model",

@@ -95,6 +95,8 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
                 continue
             else:
                 pixel_len_arr.append(rect_len)
+        if len(pixel_len_arr) == 0:
+            continue
         actual_len = INIT_SHAFT_LEN if cls == 0 else (
                 INIT_SHAFT_LEN * rect_len / (sum(pixel_len_arr) / len(pixel_len_arr)))
         
@@ -104,7 +106,6 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         if cls == 1 and inserted and actual_len <= INIT_SHAFT_LEN - MOVE_THRESHOLD:
             inserted = False
             insert_spec_end_frame = idx
-            print(insert_start_frame, insert_spec_end_frame, fps)
             interval_time = max(1, insert_spec_end_frame - insert_start_frame) / fps
             spec_insert_speed = MOVE_THRESHOLD / interval_time
     
@@ -115,17 +116,25 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         "speed": spec_insert_speed,
     }
     
+    # 将 pixel_len_arr 保存至 pkl 文件
+    import pickle
+    os.makedirs(f"resources/needle_lens", exist_ok=True)
+    with open(f"resources/needle_lens/{video_name}.pkl", "wb") as f:
+        pickle.dump({
+            "lens": smooth_lens,
+            "key_frame": [insert_start_frame, insert_spec_end_frame]
+        }, f)
+    
     # 生成速度折线图
-    plt.figure()
-    match = re.search(r'\d+', video_name)
-    num = int(match.group())
-    chart_path = f"speeds_chart/{video_name}.png"
-    os.makedirs("../resources/speeds_chart", exist_ok=True)
-    plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), [actual_start, actual_end], chart_path)
-    deviations[video_name] = compute_metrics(
-        lens,
-        (insert_start_frame, insert_spec_end_frame),
-        fps)
+    # plt.figure()
+    # match = re.search(r'\d+', video_name)
+    # chart_path = f"resources/speeds_chart/{video_name}.png"
+    # os.makedirs("../resources/speeds_chart", exist_ok=True)
+    # plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), file_path=chart_path)
+    # deviations[video_name] = compute_metrics(
+    #     lens,
+    #     (insert_start_frame, insert_spec_end_frame),
+    #     fps=fps)
 
 
 if __name__ == '__main__':
@@ -133,16 +142,14 @@ if __name__ == '__main__':
     video_dir = os.path.join(CONFIG.PATH.DATASETS_PATH, "needle-seg/videos")
     parser.add_argument("-p", "--path", type=str, default=video_dir,
                         help="Path to video directory or file")
-    parser.add_argument("-ym", "--yolo_model", type=str, default="seg/best.pt",
-                        help="Path to YOLO model, e.g. seg/best.pt")
+    parser.add_argument("-ym", "--yolo_model", type=str, default="seg/yolo11n-seg-finetune.pt",
+                        help="Path to YOLO model, e.g. seg/yolo11n-seg-finetune.pt")
     parser.add_argument("-cm", "--classify_model", type=str, default="EfficientNet/EfficientNet_23.pkl",
                         help="Path to classification model, e.g. EfficientNet/EfficientNet_23.pkl")
     parser.add_argument("-yct", "--yolo_conf_threshold", type=float, default=0.35,
                         help="YOLO confidence threshold, default is 0.35")
     parser.add_argument("-jw", "--judge_wnd", type=int, default=20,
                         help="Window size for judging inserted needle, default is 20")
-    parser.add_argument("-i", "--frame_interval", type=int, default=1,
-                        help="Frame interval for calculating speed, default is 1")
     args = parser.parse_args()
     
     if os.path.isdir(args.path):
@@ -157,10 +164,10 @@ if __name__ == '__main__':
     for video, info in video_info_dict.items():
         print(f"{video}:  {info['start_frame']}-{info['end_frame']}  {info['speed']:.2f}mm/s")
     
-    for video, deviation in deviations.items():
-        print(f"{video} - Gaussian: {deviation[1]:.2f}, Normal: {deviation[0]:.2f}, "
-              f"Savitzky Golay: {deviation[2]:.2f}")
-    
-    averages = [sum(values) / len(deviations) for values in zip(*deviations.values())]
-    print(f"Avg - Gaussian: {averages[1]:.2f}, Normal: {averages[0]:.2f}, "
-          f"Savitzky Golay: {averages[2]:.2f}")
+    # for video, deviation in deviations.items():
+    #     print(f"{video} - Gaussian: {deviation[1]:.2f}, Normal: {deviation[0]:.2f}, "
+    #           f"Savitzky Golay: {deviation[2]:.2f}")
+    #
+    # averages = [sum(values) / len(deviations) for values in zip(*deviations.values())]
+    # print(f"Avg - Gaussian: {averages[1]:.2f}, Normal: {averages[0]:.2f}, "
+    #       f"Savitzky Golay: {averages[2]:.2f}")

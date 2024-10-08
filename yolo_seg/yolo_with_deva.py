@@ -243,7 +243,7 @@ if __name__ == '__main__':
     add_ext_eval_args(parser)
     add_auto_default_args(parser)
     deva_model, cfg, args = get_model_and_config(parser)
-    yolo_model = YOLO("/home/puncture/weights/seg/best.pt")
+    yolo_model = YOLO("seg/yolo11n-seg-finetune.pt")
     # sam_model = get_sam_model(cfg, 'cuda')
     """
     Temporal setting

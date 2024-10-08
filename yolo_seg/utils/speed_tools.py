@@ -26,32 +26,9 @@ def difference(lens):
     return diff
 
 
-def smoothing(lens):
-    """单调递减平滑"""
-    if len(lens) == 0:
-        return
-    min_val = lens[0]
-    idx = 1
-    while idx < len(lens):
-        if lens[idx] > min_val:
-            next_idx = idx + 1
-            while next_idx < len(lens) and lens[next_idx] > min_val:
-                next_idx += 1
-            if next_idx >= len(lens):
-                next_idx = idx
-            num = next_idx - idx
-            diff = min_val - lens[next_idx]
-            for i in range(num):
-                lens[idx + i] = min_val - diff * (i + 1) / (num + 1)
-        else:
-            min_val = lens[idx]
-        idx += 1
-    return lens
-
-
-def plot_speeds(lens, pred_range, act_range, file_path=None, frame_bias=20):
+def plot_speeds(lens, pred_range, *, act_range=None, file_path=None, frame_bias=20):
     predict_start, predict_end = pred_range
-    actual_start, actual_end = act_range
+    actual_start, actual_end = -1, -1 if act_range is None else act_range
     
     def plot_sub_img(ax, array, start=0, end=-1, title="", x_label="Frame", y_label="Length"):
         x_values = np.arange(0, len(lens))
