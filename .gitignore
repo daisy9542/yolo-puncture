@@ -143,7 +143,6 @@ runs/
 wandb/
 tests/
 .DS_Store
-output/
 
 # Neural Network weights -----------------------------------------------------------------------------------------------
 weights/
@@ -165,3 +164,4 @@ pnnx*
 
 resources/
 tmp/
+deva-output/

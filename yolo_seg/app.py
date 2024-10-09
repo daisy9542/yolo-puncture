@@ -1,18 +1,14 @@
-import os
-
 import gradio as gr
 import cv2
-import re
 import tempfile
 import numpy as np
-import matplotlib.pyplot as plt
 
 from ultralytics import YOLO
 
 from utils.config import get_config
 from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
-from utils.speed_tools import plot_speeds, gaussian_smoothing
+from utils.speed_tools import gaussian_smoothing
 
 CONFIG = get_config()
 
@@ -29,13 +25,13 @@ def yolo_inference(image, video,
                    judge_wnd):
     model = YOLO(f'{CONFIG.PATH.WEIGHTS_PATH}/{yolo_model_id}')
     if image:
-        results = model.predict(source=image, conf=yolo_conf_threshold, agnostic_nms=True, retina_masks=True)
+        results = model.predict(source=image, conf=yolo_conf_threshold, retina_masks=True)
         seg_coords = results[0].masks.xy[0]
         image = np.array(image)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         mask = get_coord_mask(image.shape, seg_coords)
         annotated_image = cv2.addWeighted(image, 1, mask, 1, 0)
-        return annotated_image[:, :, ::-1], None, None
+        return annotated_image[:, :, ::-1], None
     else:
         video_path = tempfile.mktemp(suffix=".mp4")
         
@@ -70,7 +66,7 @@ def yolo_inference(image, video,
                 break
             frames.append(frame)
             
-            results = model.predict(source=frame, conf=yolo_conf_threshold)
+            results = model.predict(source=frame, conf=yolo_conf_threshold, retina_masks=True)
             pred_boxes = results[0].boxes.cpu().numpy()
             height, width, _ = frame.shape
             
@@ -167,7 +163,7 @@ def yolo_inference(image, video,
         # chart_path = tempfile.mktemp(suffix=".png")
         # plot_speeds(lens, (insert_start_frame, insert_spec_end_frame), file_path=chart_path)
         #
-        return None, output_video_path, None
+        return None, output_video_path
 
 
 def app():
@@ -216,7 +212,6 @@ def app():
             with gr.Column():
                 output_image = gr.Image(type="numpy", label="Annotated Image", visible=False)
                 output_video = gr.Video(label="Annotated Video", visible=True)
-                output_chart = gr.Image(label="Shaft Speed Chart", visible=True)
         
         def update_visibility(input_type):
             image = gr.update(visible=True) if input_type == "Image" else gr.update(visible=False)
@@ -259,7 +254,7 @@ def app():
                     yolo_conf_threshold,
                     judge_wnd,
                     input_type],
-            outputs=[output_image, output_video, output_chart],
+            outputs=[output_image, output_video],
         )
 
 
