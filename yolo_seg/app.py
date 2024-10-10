@@ -2,6 +2,7 @@ import gradio as gr
 import cv2
 import tempfile
 import numpy as np
+import torch.cuda
 
 from ultralytics import YOLO
 
@@ -17,6 +18,13 @@ MOVE_THRESHOLD = 2  # 针梗移动的阈值，单位为毫米
 CONFIRMATION_FRAMES = 5  # 连续几帧确认像素比例和插入状态
 OUT_EXPAND = 50  # 输出图像感兴趣区域的扩展像素数
 
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
+
 
 def yolo_inference(image, video,
                    yolo_model_id,
@@ -25,7 +33,7 @@ def yolo_inference(image, video,
                    judge_wnd):
     model = YOLO(f'{CONFIG.PATH.WEIGHTS_PATH}/{yolo_model_id}')
     if image:
-        results = model.predict(source=image, conf=yolo_conf_threshold, retina_masks=True)
+        results = model.predict(source=image, conf=yolo_conf_threshold, retina_masks=True, device=device)
         seg_coords = results[0].masks.xy[0]
         image = np.array(image)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -45,7 +53,7 @@ def yolo_inference(image, video,
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         output_video_path = tempfile.mktemp(suffix=".mp4")
-        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter.fourcc(*'mp4v'), fps, (frame_width, frame_height))
+        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter.fourcc(*'avc1'), fps, (frame_width, frame_height))
         
         yolo_pred_xyxy = []  # yolo 预测的目标位置信息
         coord_xys = []  # 实例分割标注数组
@@ -66,7 +74,7 @@ def yolo_inference(image, video,
                 break
             frames.append(frame)
             
-            results = model.predict(source=frame, conf=yolo_conf_threshold, retina_masks=True)
+            results = model.predict(source=frame, conf=yolo_conf_threshold, retina_masks=True, device=device)
             pred_boxes = results[0].boxes.cpu().numpy()
             height, width, _ = frame.shape
             
@@ -146,13 +154,13 @@ def yolo_inference(image, video,
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} -"
             else:
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
-            
+            print(1)
             mask = get_coord_mask(frame.shape, coord_xy)
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
             combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
             out.write(combined_frame)
-        
+            print(2)
         cap.release()
         out.release()
         print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed:.2f}mm/s")

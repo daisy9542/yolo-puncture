@@ -10,7 +10,12 @@ from efficientnet_pytorch import EfficientNet
 from .config import get_config
 
 CONFIG = get_config()
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
 NUM_CLASSES = 2
 INPUT_IMG_SIZE = 348
 
@@ -33,7 +38,7 @@ def load_efficient_net(name):
     model.to(device)
     
     # 加载预训练模型
-    checkpoint = torch.load(os.path.join(CONFIG.PATH.WEIGHTS_PATH, name))
+    checkpoint = torch.load(os.path.join(CONFIG.PATH.WEIGHTS_PATH, name), map_location=torch.device(device))
     model.load_state_dict(checkpoint['model_state_dict'])
     # optimizer = torch.optim.Adam(model.parameters())  # 假设使用Adam优化器
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -116,7 +121,6 @@ def fix_class_prob(class_list, prob_list, class_index):
       功能：修正分类-概率序列
     """
     n = len(class_list)
-    
     # 向前遍历，从 class_index-1 到 0
     for i in range(class_index - 1, -1, -1):
         if class_list[i] != 0:

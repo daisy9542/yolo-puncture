@@ -1,7 +1,7 @@
 from os import path
 from argparse import ArgumentParser
 import re
-from typing import Tuple
+from typing import Dict, List
 
 import torch
 from torch.utils.data import DataLoader
@@ -22,13 +22,14 @@ from tqdm import tqdm
 import json
 import os
 from torch.utils.data.dataset import Dataset
+from torchvision.transforms import functional as F
 from PIL import Image
 import cv2
 
 
 def sort_key(filename):
     # 使用正则表达式提取前面和后面的数字
-    match = re.match(r"(\d+)[^\d]+(\d+)\.jpg", filename)
+    match = re.match(r"(\d+)\D+(\d+)\.jpg", filename)
     if match:
         # 将提取到的数字部分转换为整数用于排序
         return int(match.group(1)), int(match.group(2))
@@ -69,34 +70,60 @@ class VideoReader(Dataset):
     
     def __len__(self):
         return len(self.frames)
-
-
-def generate_output_mask(masks_xy: torch.Tensor, ids: torch.Tensor, original_size: Tuple[int, int]) -> torch.Tensor:
-    """
-    将 YOLO 输出的掩码和 ID 列表转换为 output_mask 格式
-    :param masks_xy: YOLO 输出的掩码，类型为 List[np.ndarray]，每个元素是形状为 (N, 2) 的数组
-    :param ids: YOLO 输出的 id 列表，形状为 (num,)
-    :param original_size: 原始图像的大小，形状为 h * w
-    :param device: 创建张量所在的设备
-    :return: 形状为 h * w 的 output_mask
-    """
-    h, w = original_size
-    output_mask = torch.zeros((h, w), dtype=torch.int64, device="cuda")
-    if ids is None or masks_xy is None:
-        return output_mask
     
-    # 遍历每个掩码并将其应用到output_mask上
-    for mask, id_ in zip(masks_xy, ids):
-        # mask 是形状为 (N, 2) 的数组，包含掩码的像素坐标
-        mask = np.array(mask)  # 确保mask是numpy数组
-        x_coords, y_coords = mask[:, 0], mask[:, 1]  # 获取x和y坐标
-        
-        # 将掩码位置标记为相应的ID
-        for x, y in zip(x_coords, y_coords):
-            if 0 <= x < w and 0 <= y < h:  # 确保坐标在范围内
-                output_mask[int(y), int(x)] = id_  # 注意这里的y, x顺序
     
-    return output_mask
+def auto_segment(config: Dict, image: np.ndarray, yolo_model,
+                 min_side: int, suppress_small_mask: bool) -> (torch.Tensor, List[ObjectInfo]):
+    """
+    使用 YOLOv8 模型对图像进行实例分割，生成索引掩码和分割信息列表。
+    """
+    device = next(yolo_model.model.parameters()).device
+
+    # 调整图像尺寸
+    h, w = image.shape[:2]
+    if min_side > 0:
+        scale = min_side / min(h, w)
+        image = cv2.resize(image, (int(w * scale), int(h * scale)))
+
+    # 模型推理
+    results = yolo_model(image, retina_masks=True)
+    detections = results[0]  # 获取第一个图像的结果
+
+    output_mask = torch.zeros((h, w), dtype=torch.int64, device=device)
+    segments_info = []
+    curr_id = 1
+
+    boxes = detections.boxes  # 边界框
+    masks = detections.masks  # 分割掩码
+
+    if masks is not None:
+        for i in range(len(masks)):
+            # 获取第 i 个目标的掩码
+            mask = masks.data[i]  # 类型为 (h, w)
+            if isinstance(mask, np.ndarray):
+                mask = torch.from_numpy(mask).to(device)
+            else:
+                mask = mask.to(device)
+                
+            # 如果掩码尺寸与输出掩码尺寸不一致，进行调整
+            if mask.shape != (h, w):
+                mask = F.resize(mask.unsqueeze(0), size=[h, w])[0]
+
+            # 可选：抑制小的掩码区域
+            if suppress_small_mask and mask.sum() < config.get('MIN_AREA_THRESHOLD', 100):
+                continue
+
+            # 将掩码中为 True 的像素赋值为当前 ID
+            output_mask[mask > 0.5] = curr_id
+
+            # 获取置信度和类别信息
+            score = boxes.conf[i].item()
+            cls = boxes.cls[i].item()
+
+            segments_info.append(ObjectInfo(id=curr_id, score=score, category_id=int(cls)))
+            curr_id += 1
+
+    return output_mask, segments_info
 
 
 def estimate_forward_mask(deva: DEVAInferenceCore, image: torch.Tensor):
@@ -130,38 +157,28 @@ def process_frame(deva: DEVAInferenceCore,
     need_resize = new_min_side > 0
     image = get_input_frame_for_deva(image_np, new_min_side)
     
-    result = yolo_model.track(image_np)[0]
-    masks_xy = result.masks.xy if result.masks else None
-    ids = result.boxes.id
-    orig_shape = result.orig_shape
-    output_mask = generate_output_mask(masks_xy, ids, orig_shape)
-    segments_info = [
-        ObjectInfo(
-            id=i + 1,
-            category_id=result.boxes.cls[i],
-            score=result.boxes.conf[i],
-        )
-        for i in range(result.boxes.cls.numel())
-    ]
-    
     frame_name = path.basename(frame_path)
-    frame_info = FrameInfo(image, output_mask, segments_info, ti, {
+    frame_info = FrameInfo(image, None, None, ti, {
         'frame': [frame_name],
         'shape': [h, w],
     })
     
+    # 将 YOLO 模型移到可用的 GPU 上
+    if torch.cuda.is_available():
+        yolo_model.model.to("cuda")
+    
     if cfg['temporal_setting'] == 'semionline':
         if ti + cfg['num_voting_frames'] > deva.next_voting_frame:
             # getting a forward mask
-            if deva.memory.engaged:
-                forward_mask = estimate_forward_mask(deva, image)
-            else:
-                forward_mask = None
+            # if deva.memory.engaged:
+            #     forward_mask = estimate_forward_mask(deva, image)
+            # else:
+            #     forward_mask = None
             
-            # mask, segments_info = make_segmentation(cfg, image_np, forward_mask, sam_model,
-            #                                         new_min_side, suppress_small_mask)
-            # frame_info.mask = mask
-            # frame_info.segments_info = segments_info
+            mask, segments_info = auto_segment(cfg, image_np, yolo_model,
+                                                    new_min_side, suppress_small_mask)
+            frame_info.mask = mask
+            frame_info.segments_info = segments_info
             frame_info.image_np = image_np  # for visualization only
             # wait for more frames before proceeding
             deva.add_to_temporary_buffer(frame_info)
@@ -210,15 +227,15 @@ def process_frame(deva: DEVAInferenceCore,
     elif cfg['temporal_setting'] == 'online':
         if ti % cfg['detection_every'] == 0:
             # incorporate new detections
-            if deva.memory.engaged:
-                forward_mask = estimate_forward_mask(deva, image)
-            else:
-                forward_mask = None
+            # if deva.memory.engaged:
+            #     forward_mask = estimate_forward_mask(deva, image)
+            # else:
+            #     forward_mask = None
             
-            # mask, segments_info = make_segmentation(cfg, image_np, forward_mask, sam_model,
-            #                                         new_min_side, suppress_small_mask)
+            mask, segments_info = auto_segment(cfg, image_np, yolo_model,
+                                                    new_min_side, suppress_small_mask)
             frame_info.segments_info = segments_info
-            prob = deva.incorporate_detection(image, output_mask, segments_info, incremental=True)
+            prob = deva.incorporate_detection(image, mask, segments_info, incremental=True)
         else:
             # Run the model on this frame
             prob = deva.step(image, None, None)
@@ -269,7 +286,7 @@ if __name__ == '__main__':
     deva = DEVAInferenceCore(deva_model, config=cfg)
     deva.next_voting_frame = args.num_voting_frames - 1
     deva.enabled_long_id()
-    result_saver = ResultSaver(out_path, "deva-result.mp4", dataset='demo', object_manager=deva.object_manager)
+    result_saver = ResultSaver(out_path, "video1", dataset='demo', object_manager=deva.object_manager)
     
     with torch.cuda.amp.autocast(enabled=args.amp):
         for ti, (frame, im_path) in enumerate(tqdm(loader)):
