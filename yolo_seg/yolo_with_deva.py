@@ -26,6 +26,13 @@ from torchvision.transforms import functional as F
 from PIL import Image
 import cv2
 
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
+
 
 def sort_key(filename):
     # 使用正则表达式提取前面和后面的数字
@@ -165,7 +172,7 @@ def process_frame(deva: DEVAInferenceCore,
     
     # 将 YOLO 模型移到可用的 GPU 上
     if torch.cuda.is_available():
-        yolo_model.model.to("cuda")
+        yolo_model.model.to(device)
     
     if cfg['temporal_setting'] == 'semionline':
         if ti + cfg['num_voting_frames'] > deva.next_voting_frame:

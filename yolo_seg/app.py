@@ -154,13 +154,11 @@ def yolo_inference(image, video,
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} -"
             else:
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
-            print(1)
             mask = get_coord_mask(frame.shape, coord_xy)
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
             combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
             out.write(combined_frame)
-            print(2)
         cap.release()
         out.release()
         print(f"Start: {insert_start_frame} End: {insert_spec_end_frame} Speed: {spec_insert_speed:.2f}mm/s")
