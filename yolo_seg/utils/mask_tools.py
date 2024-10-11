@@ -33,7 +33,7 @@ def get_bi_min_rect_len(mask_bi):
 def get_coord_mask(image_shape, mask_xy, color=(255, 255, 0)):
     """根据多边形坐标绘制掩码"""
     mask = np.zeros(image_shape, dtype=np.uint8)
-    if mask_xy is None:
+    if mask_xy is None or len(mask_xy) == 0:
         return mask
     points = np.array(mask_xy, dtype=np.int32).reshape((-1, 1, 2))
     cv2.fillPoly(mask, [points], color)
@@ -44,7 +44,7 @@ def get_bi_mask(img_shape, mask_bi, x_offset=0, y_offset=0, color=(255, 255, 0))
     """根据二值掩码绘制分割掩码"""
     mask = np.zeros(img_shape, dtype=np.uint8)
     
-    if mask_bi is None:
+    if mask_bi is None or len(mask_bi) == 0:
         return mask
     
     # color_mask = np.random.randint(0, 255, (3,), dtype=int)
