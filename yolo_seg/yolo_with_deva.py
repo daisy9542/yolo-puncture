@@ -1,11 +1,15 @@
 from os import path
 from argparse import ArgumentParser
-import re
-from typing import Dict, List
-
+import numpy as np
+from tqdm import tqdm
+import json
+import cv2
 import torch
 from torch.utils.data import DataLoader
-import numpy as np
+from torchvision.transforms import functional as F
+from typing import Dict, List
+
+from ultralytics import YOLO
 
 from deva.inference.inference_core import DEVAInferenceCore
 from deva.inference.result_utils import ResultSaver
@@ -16,15 +20,7 @@ from deva.inference.object_info import ObjectInfo
 from deva.ext.ext_eval_args import add_ext_eval_args, add_auto_default_args
 from deva.utils.tensor_utils import pad_divide_by, unpad
 
-from ultralytics import YOLO
-
-from tqdm import tqdm
-import json
-import os
-from torch.utils.data.dataset import Dataset
-from torchvision.transforms import functional as F
-from PIL import Image
-import cv2
+from utils.video_reader import VideoReader
 
 if torch.cuda.is_available():
     device = "cuda"
@@ -34,75 +30,34 @@ else:
     device = "cpu"
 
 
-def sort_key(filename):
-    # 使用正则表达式提取前面和后面的数字
-    match = re.match(r"(\d+)\D+(\d+)\.jpg", filename)
-    if match:
-        # 将提取到的数字部分转换为整数用于排序
-        return int(match.group(1)), int(match.group(2))
-    return 0, 0  # 如果没有匹配成功返回一个默认值
-
-
 def no_collate(x):
     return x
 
 
-class VideoReader(Dataset):
-    """
-    This class is used to read a video, one frame at a time
-    This simple version:
-    1. Does not load the mask/json
-    2. Does not normalize the input
-    3. Does not resize
-    """
-    
-    def __init__(
-            self,
-            image_dir,
-    ):
-        """
-        image_dir - points to a directory of jpg images
-        """
-        self.image_dir = image_dir
-        self.frames = sorted(os.listdir(self.image_dir), key=sort_key)
-    
-    def __getitem__(self, idx):
-        frame = self.frames[idx]
-        
-        im_path = path.join(self.image_dir, frame)
-        img = Image.open(im_path).convert('RGB')
-        img = np.array(img)
-        
-        return img, im_path
-    
-    def __len__(self):
-        return len(self.frames)
-    
-    
 def auto_segment(config: Dict, image: np.ndarray, yolo_model,
                  min_side: int, suppress_small_mask: bool) -> (torch.Tensor, List[ObjectInfo]):
     """
-    使用 YOLOv8 模型对图像进行实例分割，生成索引掩码和分割信息列表。
+    使用 YOLO 模型对图像进行实例分割，生成索引掩码和分割信息列表。
     """
     device = next(yolo_model.model.parameters()).device
-
+    
     # 调整图像尺寸
     h, w = image.shape[:2]
     if min_side > 0:
         scale = min_side / min(h, w)
         image = cv2.resize(image, (int(w * scale), int(h * scale)))
-
+    
     # 模型推理
     results = yolo_model(image, retina_masks=True)
     detections = results[0]  # 获取第一个图像的结果
-
+    
     output_mask = torch.zeros((h, w), dtype=torch.int64, device=device)
     segments_info = []
     curr_id = 1
-
+    
     boxes = detections.boxes  # 边界框
     masks = detections.masks  # 分割掩码
-
+    
     if masks is not None:
         for i in range(len(masks)):
             # 获取第 i 个目标的掩码
@@ -111,25 +66,25 @@ def auto_segment(config: Dict, image: np.ndarray, yolo_model,
                 mask = torch.from_numpy(mask).to(device)
             else:
                 mask = mask.to(device)
-                
+            
             # 如果掩码尺寸与输出掩码尺寸不一致，进行调整
             if mask.shape != (h, w):
                 mask = F.resize(mask.unsqueeze(0), size=[h, w])[0]
-
+            
             # 可选：抑制小的掩码区域
             if suppress_small_mask and mask.sum() < config.get('MIN_AREA_THRESHOLD', 100):
                 continue
-
+            
             # 将掩码中为 True 的像素赋值为当前 ID
             output_mask[mask > 0.5] = curr_id
-
+            
             # 获取置信度和类别信息
             score = boxes.conf[i].item()
             cls = boxes.cls[i].item()
-
+            
             segments_info.append(ObjectInfo(id=curr_id, score=score, category_id=int(cls)))
             curr_id += 1
-
+    
     return output_mask, segments_info
 
 
@@ -183,7 +138,7 @@ def process_frame(deva: DEVAInferenceCore,
             #     forward_mask = None
             
             mask, segments_info = auto_segment(cfg, image_np, yolo_model,
-                                                    new_min_side, suppress_small_mask)
+                                               new_min_side, suppress_small_mask)
             frame_info.mask = mask
             frame_info.segments_info = segments_info
             frame_info.image_np = image_np  # for visualization only
@@ -240,7 +195,7 @@ def process_frame(deva: DEVAInferenceCore,
             #     forward_mask = None
             
             mask, segments_info = auto_segment(cfg, image_np, yolo_model,
-                                                    new_min_side, suppress_small_mask)
+                                               new_min_side, suppress_small_mask)
             frame_info.segments_info = segments_info
             prob = deva.incorporate_detection(image, mask, segments_info, incremental=True)
         else:
@@ -262,6 +217,7 @@ if __name__ == '__main__':
     Arguments loading
     """
     parser = ArgumentParser()
+    parser.add_argument("--video_name", type=str, required=True, help="Name of the video")
     
     add_common_eval_args(parser)
     add_ext_eval_args(parser)
@@ -293,7 +249,7 @@ if __name__ == '__main__':
     deva = DEVAInferenceCore(deva_model, config=cfg)
     deva.next_voting_frame = args.num_voting_frames - 1
     deva.enabled_long_id()
-    result_saver = ResultSaver(out_path, "video1", dataset='demo', object_manager=deva.object_manager)
+    result_saver = ResultSaver(out_path, cfg["video_name"], dataset='demo', object_manager=deva.object_manager)
     
     with torch.cuda.amp.autocast(enabled=args.amp):
         for ti, (frame, im_path) in enumerate(tqdm(loader)):
