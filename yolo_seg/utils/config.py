@@ -1,6 +1,8 @@
 import yaml
 import os
 
+__all__ = ['get_config']
+
 
 class Dict2Obj:
     def __init__(self, d):

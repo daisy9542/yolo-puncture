@@ -7,17 +7,23 @@ import torch.nn as nn
 from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 
-from .config import get_config
+from yolo_seg.utils import get_config, crop_frame
 
 CONFIG = get_config()
+
 if torch.cuda.is_available():
     device = "cuda"
-elif torch.backends.mps.is_available():
-    device = "mps"
 else:
     device = "cpu"
+
 NUM_CLASSES = 2
-INPUT_IMG_SIZE = 348
+INPUT_IMG_SIZE = 380
+
+__all__ = [
+    'load_efficient_net',
+    'predict_images',
+    'predict_and_find_start_inserted',
+]
 
 
 class ModifiedEfficientNet(nn.Module):
@@ -45,43 +51,6 @@ def load_efficient_net(name):
     # epoch = checkpoint['epoch']
     # best_acc = checkpoint['best_acc']
     return model
-
-
-def crop_frame(frame, xyxy, crop_size=INPUT_IMG_SIZE):
-    """
-      功能：帧区域裁剪
-    """
-    height, width, _ = frame.shape
-    x1, y1, x2, y2 = xyxy
-    x_center, y_center = int((x1 + x2) / 2), int((y1 + y2) / 2)
-    
-    # 扩展到crop_sizexcrop_size
-    half_size = crop_size // 2
-    x1 = x_center - half_size
-    y1 = y_center - half_size
-    x2 = x_center + half_size
-    y2 = y_center + half_size
-    
-    # 边界检查
-    x1 = max(0, x1)
-    y1 = max(0, y1)
-    x2 = min(width, x2)
-    y2 = min(height, y2)
-    
-    cropped_image = frame[y1:y2, x1:x2]
-    
-    # 如果切图大小不足crop_sizexcrop_size，进行补边
-    if cropped_image.shape[0] < crop_size or cropped_image.shape[1] < crop_size:
-        padded_image = np.zeros((crop_size, crop_size, 3), dtype=np.uint8)
-        padded_image[:cropped_image.shape[0], :cropped_image.shape[1]] = cropped_image
-        cropped_image = padded_image
-    
-    # for debug: 观察裁剪的图片
-    # fpath =os.path.join('./crop_images_for_classify/', f'{cnt}.jpg')
-    # print(fpath)
-    # cv2.imwrite(fpath, cropped_image)
-    # cnt+=1
-    return cropped_image
 
 
 def predict_images(model, images):
@@ -169,7 +138,7 @@ def predict_and_find_start_inserted(model, frames=None, boxes_list=None, judge_w
     # print(f"frames length: {len(frames)}")
     for i, xyxy in enumerate(boxes_list):
         frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
-        roi = crop_frame(frame, xyxy)
+        roi = crop_frame(frame, xyxy, INPUT_IMG_SIZE)
         roi_list.append(roi)
     
     # 预测

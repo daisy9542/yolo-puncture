@@ -6,6 +6,8 @@ from .config import get_config
 
 CONFIG = get_config()
 
+__all__ = ["segment_anything"]
+
 
 def show_mask(mask, ax):
     color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
@@ -68,7 +70,7 @@ def show_anns(frame_shape, anns, x_offset=0, y_offset=0):
     return mask
 
 
-def segment(image, model_type="vit_l", device="cuda"):
+def segment_anything(image, model_type="vit_l", device="cuda"):
     """
     vit_h: ViT-H SAM model, sam_vit_h_4b8939.pth (huge)
     vit_l: ViT-L SAM model, sam_vit_l_0b3195.pth (large)

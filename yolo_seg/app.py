@@ -5,11 +5,18 @@ import numpy as np
 import torch.cuda
 
 from ultralytics import YOLO
-
-from utils.config import get_config
-from utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
-from utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
-from utils.speed_tools import gaussian_smoothing
+from tasks import (
+    load_efficient_net,
+    predict_and_find_start_inserted,
+)
+from utils import (
+    get_config,
+    get_coord_mask,
+    create_roi_mask,
+    get_coord_min_rect_len,
+    crop_frame,
+    gaussian_smoothing,
+)
 
 CONFIG = get_config()
 
@@ -30,7 +37,8 @@ def yolo_inference(image, video,
                    yolo_model_id,
                    classify_model_id,
                    yolo_conf_threshold,
-                   judge_wnd):
+                   judge_wnd
+                   ):
     model = YOLO(f'{CONFIG.PATH.WEIGHTS_PATH}/{yolo_model_id}')
     if image:
         results = model.predict(source=image, conf=yolo_conf_threshold, retina_masks=True, device=device)
@@ -105,12 +113,16 @@ def yolo_inference(image, video,
             frames=frames,
             boxes_list=yolo_pred_xyxy,
             judge_wnd=judge_wnd,
-            batch_size=yolo_batch_size)
+            batch_size=yolo_batch_size
+        )
+        
+        crop_frames = map(crop_frame, frames, yolo_pred_xyxy)
         
         last_xyxy = None
         smooth_lens = gaussian_smoothing(lens)
         for idx, (frame, coord_xy, rect_len, xyxy, cls, prob) in enumerate(
-                zip(frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)):
+                zip(frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)
+        ):
             height, width, _ = frame.shape
             
             if inserted:
@@ -238,19 +250,22 @@ def app():
                           classify_model_id,
                           yolo_conf_threshold,
                           judge_wnd,
-                          input_type):
+                          input_type
+                          ):
             if input_type == "Image":
                 return yolo_inference(image, None,
                                       yolo_model_id,
                                       classify_model_id,
                                       yolo_conf_threshold=yolo_conf_threshold,
-                                      judge_wnd=judge_wnd)
+                                      judge_wnd=judge_wnd
+                                      )
             else:
                 return yolo_inference(None, video,
                                       yolo_model_id,
                                       classify_model_id,
                                       yolo_conf_threshold=yolo_conf_threshold,
-                                      judge_wnd=judge_wnd)
+                                      judge_wnd=judge_wnd
+                                      )
         
         yolo_infer.click(
             fn=run_inference,
@@ -271,7 +286,8 @@ with gradio_app:
     <h1 style='text-align: center'>
     Puncture Detection
     </h1>
-    """)
+    """
+    )
     with gr.Row():
         with gr.Column():
             app()

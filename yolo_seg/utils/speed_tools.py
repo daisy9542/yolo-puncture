@@ -3,6 +3,14 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 
+__all__ = [
+    "gaussian_smoothing",
+    "savitzky_golay_smoothing",
+    "difference",
+    "plot_speeds",
+    "compute_metrics",
+]
+
 
 def gaussian_smoothing(lens, sigma=3):
     """高斯平滑"""

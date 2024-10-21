@@ -8,6 +8,11 @@ import tempfile
 
 from torch.utils.data.dataset import Dataset
 
+__all__ = [
+    'VideoReader',
+    'sort_key',
+]
+
 
 class VideoReader(Dataset):
     """

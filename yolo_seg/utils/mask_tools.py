@@ -1,6 +1,13 @@
 import cv2
 import numpy as np
 
+__all__ = ['get_coord_min_rect_len',
+           'get_bi_min_rect_len',
+           'get_coord_mask',
+           'get_bi_mask',
+           'create_roi_mask',
+           'filter_masks']
+
 
 def get_coord_min_rect_len(coord_xy):
     """计算多边形坐标的最小外接矩形的长度，这里指的较大的边"""
