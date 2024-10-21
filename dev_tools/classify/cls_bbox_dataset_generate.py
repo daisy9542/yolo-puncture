@@ -1,3 +1,8 @@
+"""
+前提：确定了视频的插入关键帧
+用途：利用预训练的YOLO 获取bbox标签
+"""
+
 import os
 import cv2
 import re

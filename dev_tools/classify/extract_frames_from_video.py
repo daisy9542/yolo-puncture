@@ -41,7 +41,7 @@ def extract_frames(video_path, output_directory='/home/puncture/datasets/needle-
 
 if __name__ == '__main__':
     vpath_list = [
-        f'/home/puncture/datasets/needle-seg/hospital_videos/video{i}.mp4' for i in range(54,66)
+        f'/home/puncture/datasets/needle-seg/videos/video{i}.mp4' for i in range(28,30)
     ]
     for vpath in vpath_list:
         extract_frames(vpath)
