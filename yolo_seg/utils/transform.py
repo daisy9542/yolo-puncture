@@ -1,12 +1,25 @@
 """各种图片转换功能函数"""
+from torchvision import transforms
+from PIL import Image
+
 import numpy as np
+import cv2
 
 __all__ = [
+    'numpy2tensor',
     'crop_frame',
 ]
 
 
-def crop_frame(frame, xyxy, crop_size=380):
+
+def numpy2tensor(frame):
+    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    transform = transforms.Compose([
+        transforms.ToTensor(),  # 自动将 uint8 转换为 float32
+    ])
+    return transform(Image.fromarray(img))
+
+def crop_frame(frame, xyxy, crop_size=380, need_padding=False):
     """
       功能：帧区域裁剪
     """
@@ -30,7 +43,7 @@ def crop_frame(frame, xyxy, crop_size=380):
     cropped_image = frame[y1:y2, x1:x2]
     
     # 如果切图大小不足crop_sizexcrop_size，进行补边
-    if cropped_image.shape[0] < crop_size or cropped_image.shape[1] < crop_size:
+    if need_padding and cropped_image.shape[0] < crop_size or cropped_image.shape[1] < crop_size:
         padded_image = np.zeros((crop_size, crop_size, 3), dtype=np.uint8)
         padded_image[:cropped_image.shape[0], :cropped_image.shape[1]] = cropped_image
         cropped_image = padded_image
@@ -40,4 +53,4 @@ def crop_frame(frame, xyxy, crop_size=380):
     # print(fpath)
     # cv2.imwrite(fpath, cropped_image)
     # cnt+=1
-    return cropped_image
+    return cropped_image, (x1, y1, x2, y2)

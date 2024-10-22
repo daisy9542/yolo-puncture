@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 
-from yolo_seg.utils import get_config, crop_frame
+from utils import (get_config, crop_frame)
 
 CONFIG = get_config()
 
@@ -138,7 +138,7 @@ def predict_and_find_start_inserted(model, frames=None, boxes_list=None, judge_w
     # print(f"frames length: {len(frames)}")
     for i, xyxy in enumerate(boxes_list):
         frame = cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB)
-        roi = crop_frame(frame, xyxy, INPUT_IMG_SIZE)
+        roi,_ = crop_frame(frame, xyxy, INPUT_IMG_SIZE, need_padding=True)
         roi_list.append(roi)
     
     # 预测

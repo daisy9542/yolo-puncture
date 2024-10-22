@@ -20,6 +20,7 @@ from .speed_tools import (
     compute_metrics,
 )
 from .transform import (
+    numpy2tensor,
     crop_frame,
 )
 from .video_reader import (
@@ -41,6 +42,7 @@ __all__ = [
     "difference",
     "plot_speeds",
     "compute_metrics",
+    "numpy2tensor",
     "crop_frame",
     "VideoReader",
     "sort_key",
