@@ -7,7 +7,7 @@ import argparse
 import pickle
 from tqdm import tqdm
 from yolo_seg.utils.config import get_config
-from yolo_seg.utils.segment_anything import segment
+from yolo_seg.utils.segment_anything import segment_anything
 from yolo_seg.utils.mask_tools import filter_masks
 from dev_tools.toolbox import polygon_encoding
 
@@ -30,7 +30,7 @@ def process_video(video_files, output_dir, topn):
             if not ret:
                 break  # 读取到视频末尾时退出
             
-            masks = segment(frame)
+            masks = segment_anything(frame)
             masks = filter_masks(masks, topn)
             
             polygon_masks = []

@@ -4,16 +4,14 @@
 """
 import cv2
 import os
-import re
 import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 
 from ultralytics import YOLO
 from yolo_seg.utils.config import get_config
-from yolo_seg.utils.needle_clasify import load_efficient_net, predict_and_find_start_inserted
+from yolo_seg.task.needle_clasify import load_efficient_net, predict_and_find_start_inserted
 from yolo_seg.utils.mask_tools import get_coord_min_rect_len
-from yolo_seg.utils.speed_tools import plot_speeds, compute_metrics, gaussian_smoothing
+from yolo_seg.utils.speed_tools import gaussian_smoothing
 
 CONFIG = get_config()
 

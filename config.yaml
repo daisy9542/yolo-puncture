@@ -1,3 +1,3 @@
 PATH:
-  DATASETS_PATH: /home/puncture/datasets
-  WEIGHTS_PATH: /home/puncture/weights
+  DATASETS_PATH: /Users/daisy/Projects/MachineLearning/CV/yolo-puncture/resources/datasets
+  WEIGHTS_PATH: /Users/daisy/Projects/MachineLearning/CV/yolo-puncture/resources/weights
