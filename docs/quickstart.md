@@ -20,20 +20,7 @@ python -m pip install .
 python -m pip install -e .
 ```
 
-### 3. 安装子模块
-
-安装子模块 DEVA、Segment Anything 和 thinplate。
-
-> thinplate 是模块 DEVA 的依赖，如无法从 GitHub 获取，则可以从本地安装。
-> 同时，将 deva/pyproject.toml 中对 thinplate 的依赖需求注释掉。
-
-```bash
-git submodule update --init --recursive
-```
-
-然后分别本地安装以上子模块。
-
-### 安装 mmcv
+### 3. 安装 mmcv
 
 可参考[官方教程](https://mmcv.readthedocs.io/en/latest/get_started/installation.html)
 
