@@ -8,11 +8,20 @@ import argparse
 import numpy as np
 
 from ultralytics import YOLO
-from yolo_seg.utils.config import get_config
-from yolo_seg.task.needle_clasify import load_efficient_net, predict_and_find_start_inserted
-from yolo_seg.utils.mask_tools import get_coord_min_rect_len
-from yolo_seg.utils.speed_tools import gaussian_smoothing
-
+from yolo_seg.tasks import (
+    load_efficient_net,
+    predict_and_find_start_inserted,
+    load_unet,
+    unet_predict,
+)
+from yolo_seg.utils import (
+    get_config,
+    get_coord_mask,
+    create_roi_mask,
+    get_coord_min_rect_len,
+    crop_frame,
+    gaussian_smoothing,
+)
 CONFIG = get_config()
 
 INIT_SHAFT_LEN = 20  # 针梗的实际长度，单位为毫米
@@ -82,9 +91,14 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         judge_wnd=judge_wnd,
         batch_size=yolo_batch_size)
     
+    crop_result = map(crop_frame, frames, yolo_pred_xyxy)
+    
     smooth_lens = gaussian_smoothing(lens)
-    for idx, (rect_len, cls) in enumerate(zip(smooth_lens, class_list)):
-        if cls == 0 and not inserted:
+    for idx, ((cropped_frame, cropped_coord), frame, coord_xy, rect_len, xyxy, cls, prob) in enumerate(
+            zip(crop_result, frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)
+    ):
+        height, width, _ = frame.shape
+        if cls == 0 and not inserted and coord_xy is not None:
             pixel_len_arr.append(rect_len)
             if len(pixel_len_arr) > CONFIRMATION_FRAMES:
                 pixel_len_arr.pop(0)
@@ -113,15 +127,6 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         "end_frame": insert_spec_end_frame,
         "speed": spec_insert_speed,
     }
-    
-    # 将 pixel_len_arr 保存至 pkl 文件
-    import pickle
-    os.makedirs(f"resources/needle_lens", exist_ok=True)
-    with open(f"resources/needle_lens/{video_name}.pkl", "wb") as f:
-        pickle.dump({
-            "lens": smooth_lens,
-            "key_frame": [insert_start_frame, insert_spec_end_frame]
-        }, f)
     
     # 生成速度折线图
     # plt.figure()
