@@ -182,7 +182,7 @@ def yolo_inference(image, video,
             
             x_lt, y_lt, x_rd, y_rd = cropped_coord
             cropped_mask = unet_predict(unet_model, cropped_frame, device=device)
-            cropped_mask = np.stack([cropped_mask] * 3, axis=-1)
+            
             mask[y_lt:y_rd, x_lt:x_rd] = cropped_mask
 
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
@@ -241,7 +241,7 @@ def app():
                     minimum=0.0,
                     maximum=1.0,
                     step=0.05,
-                    value=0.35,
+                    value=0.9,
                 )
                 judge_wnd = gr.Slider(
                     label="Window Size for Judging Insert-starting Frame",

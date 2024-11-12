@@ -48,7 +48,7 @@ def auto_segment(config: Dict, image: np.ndarray, yolo_model,
         image = cv2.resize(image, (int(w * scale), int(h * scale)))
     
     # 模型推理
-    results = yolo_model(image, retina_masks=True)
+    results = yolo_model.predict(image, retina_masks=True, conf=0.9)
     detections = results[0]  # 获取第一个图像的结果
     
     output_mask = torch.zeros((h, w), dtype=torch.int64, device=device)
