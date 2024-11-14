@@ -64,6 +64,39 @@ def get_bi_mask(img_shape, mask_bi, x_offset=0, y_offset=0, color=(255, 255, 0))
     return mask
 
 
+def rle_encoding(binary_segment):
+    """将二值化的掩码数组转换为 RLE 编码。"""
+    pixels = binary_segment.flatten()
+    pixels = np.concatenate([[0], pixels, [0]])
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
+    runs[1::2] -= runs[::2]
+    return runs.tolist()
+
+
+def polygon_encoding(binary_segment, normalize=True):
+    """将二值掩码转换为多边形格式，可选择归一化坐标。"""
+    binary_segment = binary_segment.astype(np.uint8)
+    # 查找轮廓
+    contours, _ = cv2.findContours(binary_segment, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    polygons = []
+    for contour in contours:
+        contour = contour.reshape(-1, 2).tolist()
+        
+        # 如果需要归一化
+        if normalize:
+            # 获取图像的宽度和高度
+            height, width = binary_segment.shape[:2]
+            # 归一化坐标
+            contour = [(round(min(1.0, max(0.0, x / width)), 6),
+                        round(min(1.0, max(0.0, y / height)), 6))
+                       for x, y in contour]
+        contour = [coord for point in contour for coord in point]
+        polygons.extend(contour)
+    
+    return polygons
+
+
 def create_roi_mask(frame_shape, x1, y1, x2, y2, label):
     """
     在指定的 ROI 区域内绘制一个蓝色框，并在框上方显示标签内容。
