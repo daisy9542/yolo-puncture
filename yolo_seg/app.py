@@ -6,7 +6,7 @@ import torch.cuda
 
 from ultralytics import YOLO
 from tasks import (
-    load_efficient_net,
+    load_classify_net,
     predict_and_find_start_inserted,
     load_unet,
     unet_predict,
@@ -113,7 +113,7 @@ def yolo_inference(image, video,
             
             yolo_pred_xyxy.append(xyxy_box)
         
-        cls_model = load_efficient_net(name=classify_model_id)
+        cls_model = load_classify_net(name=classify_model_id)
         class_list, prob_list, insert_start_frame = predict_and_find_start_inserted(
             cls_model,
             frames=frames,
@@ -232,9 +232,9 @@ def app():
                 classify_model_id = gr.Dropdown(
                     label="Classify Model",
                     choices=[
-                        "EfficientNet/EfficientNet_23.pkl",
+                        "EfficientNet/efficientnet_b3.pth.tar",
                     ],
-                    value="EfficientNet/EfficientNet_23.pkl"
+                    value="EfficientNet/efficientnet_b3.pth.tar"
                 )
                 yolo_conf_threshold = gr.Slider(
                     label="Confidence Threshold",

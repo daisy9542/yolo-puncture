@@ -5,22 +5,23 @@ from PIL import Image
 import torch
 import torch.nn as nn
 from torchvision import transforms
-from efficientnet_pytorch import EfficientNet
+
+from timm.models import create_model, load_checkpoint
+
+import models.van
+import models.efficientnet
 
 from utils import (get_config, crop_frame)
 
 CONFIG = get_config()
 
-if torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 NUM_CLASSES = 2
 INPUT_IMG_SIZE = 380
 
 __all__ = [
-    'load_efficient_net',
+    'load_classify_net',
     'predict_images',
     'predict_and_find_start_inserted',
 ]
@@ -35,22 +36,33 @@ class ModifiedEfficientNet(nn.Module):
         return self.original_model(x)
 
 
-def load_efficient_net(name):
-    # 模型
-    model_name = 'efficientnet-b7'
-    
-    model = EfficientNet.from_name(model_name, num_classes=NUM_CLASSES)
-    model = ModifiedEfficientNet(model)
+
+# 加载保存的模型权重
+def _load_net(model_name, num_classes=2, checkpoint=None, device=device):
+    """
+    model_name: 支持van和efficientnet 两种网络
+    num_classes: 分类数
+    checkpoint: 模型权重路径，,pt,.pth,.pth.tar文件路径
+    """
+    model = create_model(
+        model_name,
+        pretrained=False,
+        num_classes=num_classes,
+        in_chans=3,
+        global_pool=None)
+
+    # print(model)
+    if checkpoint:
+        load_checkpoint(model, checkpoint)
+
     model.to(device)
+    model.eval()
     
-    # 加载预训练模型
-    checkpoint = torch.load(os.path.join(CONFIG.PATH.WEIGHTS_PATH, name), map_location=torch.device(device))
-    model.load_state_dict(checkpoint['model_state_dict'])
-    # optimizer = torch.optim.Adam(model.parameters())  # 假设使用Adam优化器
-    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    # epoch = checkpoint['epoch']
-    # best_acc = checkpoint['best_acc']
     return model
+
+
+def load_classify_net(checkpoint_name, device=device):
+    return _load_net('efficientnet_b3', os.path.join(CONFIG.PATH.WEIGHTS_PATH, checkpoint_name), device=device)
 
 
 def predict_images(model, images):

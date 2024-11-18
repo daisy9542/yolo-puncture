@@ -9,7 +9,7 @@ import numpy as np
 
 from ultralytics import YOLO
 from yolo_seg.tasks import (
-    load_efficient_net,
+    load_classify_net,
     predict_and_find_start_inserted,
     load_unet,
     unet_predict,
@@ -83,7 +83,7 @@ def process_video(video_path, yolo_model_id, classify_model_id, yolo_conf_thresh
         
         yolo_pred_xyxy.append(xyxy_box)
     
-    cls_model = load_efficient_net(name=classify_model_id)
+    cls_model = load_classify_net(name=classify_model_id)
     class_list, prob_list, insert_start_frame = predict_and_find_start_inserted(
         cls_model,
         frames=frames,

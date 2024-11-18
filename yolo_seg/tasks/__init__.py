@@ -1,5 +1,5 @@
 from .needle_clasify import (
-    load_efficient_net,
+    load_classify_net,
     predict_images,
     predict_and_find_start_inserted,
 )
@@ -10,7 +10,7 @@ from .unet_segment import (
 )
 
 __all__ = [
-    "load_efficient_net",
+    "load_classify_net",
     "predict_images",
     "predict_and_find_start_inserted",
     'load_unet',
