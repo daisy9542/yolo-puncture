@@ -71,7 +71,29 @@ from ultralytics.nn.modules import (
     SE,
     CA,
     SA,
-    DIY,
+    DIYv26,
+    DIYv27,
+    DIYv28,
+    ACAM,
+    DCIM,
+    LSAM,
+    MSTM,
+    CPEM,
+    FSFM,
+    CAPM,
+    LHAM,
+    EEM,
+    NAFM,
+    ISRM,
+    SSRM,
+    CSRM,
+    GNSRM,
+    MSRM,
+    NLSRM,
+    ResSRM,
+    FSSRM,
+    GCSRM,
+    DCSRM,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1071,7 +1093,31 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c1 = ch[f]
             phi = args[0]
             args = [c1, phi]
-        elif m in (CBAM, CAA, EMA, ACS, MCA, SRM, SE, SA, DIY):
+        elif m in (CBAM, CAA, EMA, ACS, MCA, SRM, SE, SA,
+                   DIYv26,
+                   DIYv27,
+                   DIYv28,
+                   ACAM,
+                   DCIM,
+                   LSAM,
+                   MSTM,
+                   CPEM,
+                   FSFM,
+                   CAPM,
+                   LHAM,
+                   EEM,
+                   NAFM,
+                   ISRM,
+                   SSRM,
+                   CSRM,
+                   GNSRM,
+                   MSRM,
+                   NLSRM,
+                   ResSRM,
+                   FSSRM,
+                   GCSRM,
+                   DCSRM,
+                   ):
             c1 = ch[f]
             args = [c1, *args]
         elif m is CA:

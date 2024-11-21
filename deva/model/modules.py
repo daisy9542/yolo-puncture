@@ -167,3 +167,57 @@ class SensoryDeepUpdater(nn.Module):
         new_h = forget_gate * h * (1 - update_gate) + update_gate * new_value
 
         return new_h
+
+
+class MemoryReinforceModule(nn.Module):
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super(MemoryReinforceModule, self).__init__()
+        self.conv = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(mid_channels)
+        self.relu = nn.ReLU()
+        self.conv_out = nn.Conv2d(mid_channels, out_channels, kernel_size=1)
+    
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.conv_out(x)
+        return x
+
+
+def reinforce_features(yolo_features, prev_frame_mask):
+    print("---------------reinforce_features----------------")
+    for f in yolo_features:
+        print("yolo_feature", f.shape)
+    print("prev_frame_mask: ", prev_frame_mask.shape)
+    # 上采样特征图到80×80
+    [feature_1, feature_2, feature_3] = yolo_features
+    feature_1_upsampled = feature_1  # 已经是80×80
+    feature_2_upsampled = F.interpolate(feature_2, size=feature_1.shape[-2:], mode='bilinear', align_corners=False)
+    feature_3_upsampled = F.interpolate(feature_3, size=feature_1.shape[-2:], mode='bilinear', align_corners=False)
+    
+    # 调整通道数
+    conv1x1_c1 = nn.Conv2d(feature_1.shape[1], 256, kernel_size=1)
+    conv1x1_c2 = nn.Conv2d(feature_2.shape[1], 256, kernel_size=1)
+    conv1x1_c3 = nn.Conv2d(feature_3.shape[1], 256, kernel_size=1)
+    
+    feature_1_adjusted = conv1x1_c1(feature_1_upsampled)
+    feature_2_adjusted = conv1x1_c2(feature_2_upsampled)
+    feature_3_adjusted = conv1x1_c3(feature_3_upsampled)
+    
+    # 融合特征图
+    fused_feature = torch.cat([feature_1_adjusted, feature_2_adjusted, feature_3_adjusted], dim=1)  # 通道数768
+    
+    # 调整prev_frame_mask尺寸并扩展通道数
+    prev_mask_resized = F.interpolate(prev_frame_mask, size=feature_1.shape[-2:], mode='bilinear', align_corners=False)
+    mask_conv = nn.Conv2d(1, 768, kernel_size=1)
+    prev_mask_adjusted = mask_conv(prev_mask_resized)
+    
+    # 拼接特征图和掩码
+    concatenated_feature = torch.cat([fused_feature, prev_mask_adjusted], dim=1)  # 通道数1536
+    
+    # 应用记忆强化模块
+    memory_module = MemoryReinforceModule(in_channels=1536, mid_channels=512, out_channels=256)
+    reinforced_feature = memory_module(concatenated_feature)
+    
+    return reinforced_feature

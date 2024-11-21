@@ -21,6 +21,7 @@ class DEVA(nn.Module):
         self.pix_feat_dim = config['pix_feat_dim']
         self.key_dim = config['key_dim']
         self.value_dim = config['value_dim']
+        self.reinforce = config['enable_reinforce']
 
         self.pixel_encoder = PixelEncoder(self.pix_feat_dim)
         self.mask_encoder = MaskEncoder(self.pix_feat_dim, self.value_dim)
@@ -49,8 +50,11 @@ class DEVA(nn.Module):
                     h: torch.Tensor,
                     masks: torch.Tensor,
                     *,
+                    yolo_features: (torch.Tensor, torch.Tensor, torch.Tensor) = None,
                     is_deep_update: bool = True,
                     chunk_size: int = -1) -> (torch.Tensor, torch.Tensor):
+        if self.reinforce and yolo_features is not None:
+            ms_features = reinforce_features(yolo_features, masks)
         g16, h16 = self.mask_encoder(image,
                                      ms_features,
                                      h,

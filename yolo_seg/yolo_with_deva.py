@@ -7,12 +7,14 @@ import cv2
 import torch
 from torch.utils.data import DataLoader
 from torchvision.transforms import functional as F
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from ultralytics import YOLO
 
+from deva.inference.image_feature_store import ImageFeatureStore
 from deva.inference.inference_core import DEVAInferenceCore
 from deva.inference.result_utils import ResultSaver
+from deva.inference.custom_eval_args import add_custom_eval_args
 from deva.inference.eval_args import add_common_eval_args, get_model_and_config
 from deva.inference.demo_utils import flush_buffer, get_input_frame_for_deva
 from deva.inference.frame_utils import FrameInfo
@@ -20,7 +22,8 @@ from deva.inference.object_info import ObjectInfo
 from deva.ext.ext_eval_args import add_ext_eval_args, add_auto_default_args
 from deva.utils.tensor_utils import pad_divide_by, unpad
 
-from utils.video_reader import VideoReader
+from yolo_seg.utils.video_reader import VideoReader
+from yolo_seg.utils.embedding_extractor import EmbeddingExtractor
 
 if torch.cuda.is_available():
     device = "cuda"
@@ -35,7 +38,12 @@ def no_collate(x):
 
 
 def auto_segment(config: Dict, image: np.ndarray, yolo_model,
-                 min_side: int, suppress_small_mask: bool) -> (torch.Tensor, List[ObjectInfo]):
+                 min_side: int, suppress_small_mask: bool,
+                 *,
+                 ti: int = None,
+                 extractor: EmbeddingExtractor = None,
+                 image_feature_store: ImageFeatureStore = None,
+                 ) -> Tuple[torch.Tensor, List[ObjectInfo]]:
     """
     使用 YOLO 模型对图像进行实例分割，生成索引掩码和分割信息列表。
     """
@@ -48,8 +56,10 @@ def auto_segment(config: Dict, image: np.ndarray, yolo_model,
         image = cv2.resize(image, (int(w * scale), int(h * scale)))
     
     # 模型推理
-    results = yolo_model.predict(image, retina_masks=True, conf=0.9)
-    detections = results[0]  # 获取第一个图像的结果
+    results = yolo_model.predict(image, retina_masks=True)
+    detections = results[0]
+    if extractor is not None:
+        extractor.attach_to_results(detections)
     
     output_mask = torch.zeros((h, w), dtype=torch.int64, device=device)
     segments_info = []
@@ -57,6 +67,9 @@ def auto_segment(config: Dict, image: np.ndarray, yolo_model,
     
     boxes = detections.boxes  # 边界框
     masks = detections.masks  # 分割掩码
+    embeddings = detections.embeddings  # YOLO 三个尺度的特征
+    if image_feature_store is not None:
+        image_feature_store.push_yolo_features(ti, embeddings.values())
     
     if masks is not None:
         for i in range(len(masks)):
@@ -106,7 +119,11 @@ def process_frame(deva: DEVAInferenceCore,
                   frame_path: str,
                   result_saver: ResultSaver,
                   ti: int,
-                  image_np: np.ndarray = None) -> None:
+                  *,
+                  image_np: np.ndarray = None,
+                  extractor: EmbeddingExtractor = None,
+                  image_feature_store: ImageFeatureStore = None,
+                  ) -> None:
     # image_np, if given, should be in RGB
     if image_np is None:
         image_np = cv2.imread(frame_path)
@@ -116,16 +133,18 @@ def process_frame(deva: DEVAInferenceCore,
     h, w = image_np.shape[:2]
     new_min_side = cfg['size']
     suppress_small_mask = cfg['suppress_small_objects']
+    num_voting_frames = cfg['num_voting_frames']
+    num_voting_frames += cfg['forward_clip_frames']  # 加上前向帧内共识帧数
     need_resize = new_min_side > 0
     image = get_input_frame_for_deva(image_np, new_min_side)
     
     frame_name = path.basename(frame_path)
-    frame_info = FrameInfo(image, None, None, ti, {
-        'frame': [frame_name],
-        'shape': [h, w],
-    })
-    
-    # 将 YOLO 模型移到可用的 GPU 上
+    frame_info = FrameInfo(image, None, None, ti,
+                           {
+                               'frame': [frame_name],
+                               'shape': [h, w],
+                           }
+                           )
     if torch.cuda.is_available():
         yolo_model.model.to(device)
     
@@ -138,7 +157,11 @@ def process_frame(deva: DEVAInferenceCore,
             #     forward_mask = None
             
             mask, segments_info = auto_segment(cfg, image_np, yolo_model,
-                                               new_min_side, suppress_small_mask)
+                                               new_min_side, suppress_small_mask,
+                                               ti=ti,
+                                               extractor=extractor,
+                                               image_feature_store=image_feature_store,
+                                               )
             frame_info.mask = mask
             frame_info.segments_info = segments_info
             frame_info.image_np = image_np  # for visualization only
@@ -152,18 +175,21 @@ def process_frame(deva: DEVAInferenceCore,
                 this_image_np = deva.frame_buffer[0].image_np
                 
                 _, mask, new_segments_info = deva.vote_in_temporary_buffer(
-                    keyframe_selection='first')
+                    keyframe_selection='first'
+                )
                 prob = deva.incorporate_detection(this_image,
                                                   mask,
                                                   new_segments_info,
-                                                  incremental=True)
+                                                  incremental=True
+                                                  )
                 deva.next_voting_frame += cfg['detection_every']
                 
                 result_saver.save_mask(prob,
                                        this_frame_name,
                                        need_resize=need_resize,
                                        shape=(h, w),
-                                       image_np=this_image_np)
+                                       image_np=this_image_np
+                                       )
                 
                 for frame_info in deva.frame_buffer[1:]:
                     this_image = frame_info.image
@@ -174,7 +200,8 @@ def process_frame(deva: DEVAInferenceCore,
                                            this_frame_name,
                                            need_resize,
                                            shape=(h, w),
-                                           image_np=this_image_np)
+                                           image_np=this_image_np
+                                           )
                 
                 deva.clear_buffer()
         else:
@@ -184,7 +211,8 @@ def process_frame(deva: DEVAInferenceCore,
                                    frame_name,
                                    need_resize=need_resize,
                                    shape=(h, w),
-                                   image_np=image_np)
+                                   image_np=image_np
+                                   )
     
     elif cfg['temporal_setting'] == 'online':
         if ti % cfg['detection_every'] == 0:
@@ -195,7 +223,11 @@ def process_frame(deva: DEVAInferenceCore,
             #     forward_mask = None
             
             mask, segments_info = auto_segment(cfg, image_np, yolo_model,
-                                               new_min_side, suppress_small_mask)
+                                               new_min_side, suppress_small_mask,
+                                               ti=ti,
+                                               extractor=extractor,
+                                               image_feature_store=image_feature_store,
+                                               )
             frame_info.segments_info = segments_info
             prob = deva.incorporate_detection(image, mask, segments_info, incremental=True)
         else:
@@ -205,7 +237,8 @@ def process_frame(deva: DEVAInferenceCore,
                                frame_name,
                                need_resize=need_resize,
                                shape=(h, w),
-                               image_np=image_np)
+                               image_np=image_np
+                               )
 
 
 if __name__ == '__main__':
@@ -217,14 +250,14 @@ if __name__ == '__main__':
     Arguments loading
     """
     parser = ArgumentParser()
-    parser.add_argument("--video_name", type=str, required=True, help="Name of the video")
-    
+    add_custom_eval_args(parser)
     add_common_eval_args(parser)
     add_ext_eval_args(parser)
     add_auto_default_args(parser)
     deva_model, cfg, args = get_model_and_config(parser)
     yolo_model = YOLO("seg/yolo11n-seg-finetune.pt")
     # sam_model = get_sam_model(cfg, 'cuda')
+    extractor = EmbeddingExtractor(yolo_model)
     """
     Temporal setting
     """
@@ -246,14 +279,18 @@ if __name__ == '__main__':
     
     print('Configuration:', cfg)
     
-    deva = DEVAInferenceCore(deva_model, config=cfg)
+    image_feature_store = ImageFeatureStore(deva_model)
+    deva = DEVAInferenceCore(deva_model, cfg, image_feature_store=image_feature_store)
     deva.next_voting_frame = args.num_voting_frames - 1
     deva.enabled_long_id()
     result_saver = ResultSaver(out_path, cfg["video_name"], dataset='demo', object_manager=deva.object_manager)
     
     with torch.cuda.amp.autocast(enabled=args.amp):
         for ti, (frame, im_path) in enumerate(tqdm(loader)):
-            process_frame(deva, yolo_model, im_path, result_saver, ti, image_np=frame)
+            process_frame(deva, yolo_model, im_path, result_saver, ti,
+                          image_np=frame, extractor=extractor,
+                          image_feature_store=image_feature_store
+                          )
         flush_buffer(deva, result_saver)
     result_saver.end()
     
