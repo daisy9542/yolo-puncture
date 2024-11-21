@@ -70,33 +70,32 @@ def auto_segment(config: Dict, image: np.ndarray, yolo_model,
     embeddings = detections.embeddings  # YOLO 三个尺度的特征
     if image_feature_store is not None:
         image_feature_store.push_yolo_features(ti, embeddings.values())
-    
-    if masks is not None:
-        for i in range(len(masks)):
-            # 获取第 i 个目标的掩码
-            mask = masks.data[i]  # 类型为 (h, w)
-            if isinstance(mask, np.ndarray):
-                mask = torch.from_numpy(mask).to(device)
-            else:
-                mask = mask.to(device)
-            
-            # 如果掩码尺寸与输出掩码尺寸不一致，进行调整
-            if mask.shape != (h, w):
-                mask = F.resize(mask.unsqueeze(0), size=[h, w])[0]
-            
-            # 可选：抑制小的掩码区域
-            if suppress_small_mask and mask.sum() < config.get('MIN_AREA_THRESHOLD', 100):
-                continue
-            
-            # 将掩码中为 True 的像素赋值为当前 ID
-            output_mask[mask > 0.5] = curr_id
-            
-            # 获取置信度和类别信息
-            score = boxes.conf[i].item()
-            cls = boxes.cls[i].item()
-            
-            segments_info.append(ObjectInfo(id=curr_id, score=score, category_id=int(cls)))
-            curr_id += 1
+        
+    if len(boxes.cls) > 0:
+        # 若检测到多个物体，取置信度最大的
+        best_conf_idx = np.argmax(boxes.conf.cpu())
+        best_box = boxes.xyxy[best_conf_idx]
+        best_mask = masks.data[best_conf_idx]
+        
+        # 使用最大置信度的掩码
+        if isinstance(best_mask, np.ndarray):
+            mask = torch.from_numpy(best_mask).to(device)
+        else:
+            mask = best_mask.to(device)
+        
+        # 如果掩码尺寸与输出掩码尺寸不一致，进行调整
+        if mask.shape != (h, w):
+            mask = F.resize(mask.unsqueeze(0), size=[h, w])[0]
+        
+        # 将掩码中为 True 的像素赋值为当前 ID
+        output_mask[mask > 0.5] = curr_id
+        
+        # 获取置信度和类别信息
+        score = boxes.conf[best_conf_idx].item()
+        cls = boxes.cls[best_conf_idx].item()
+        
+        segments_info.append(ObjectInfo(id=curr_id, score=score, category_id=int(cls)))
+        # curr_id += 1
     
     return output_mask, segments_info
 
