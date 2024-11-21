@@ -12,15 +12,7 @@
 python -m pip install .
 ```
 
-### 2. 安装 Ultralytics
-
-安装 Ultralytics 脚本：
-
-```bash
-python -m pip install -e .
-```
-
-### 3. 安装 mmcv
+### 2. 安装 mmcv
 
 可参考[官方教程](https://mmcv.readthedocs.io/en/latest/get_started/installation.html)
 

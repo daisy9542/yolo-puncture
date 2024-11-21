@@ -19,7 +19,9 @@ dependencies = [
     "PyYAML",
     "pillow",
     "efficientnet_pytorch",
-    "lapx"
+    "lapx",
+    "ultralytics",
+    "segment-anything",
 ]
 
 [project.scripts]
