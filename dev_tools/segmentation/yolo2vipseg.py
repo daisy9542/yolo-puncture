@@ -1,3 +1,6 @@
+"""
+将 YOLO-seg 的数据集转换为 VIPSeg 格式的数据集
+"""
 import os
 import json
 import cv2
