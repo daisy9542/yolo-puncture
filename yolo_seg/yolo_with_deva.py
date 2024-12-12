@@ -27,8 +27,6 @@ from yolo_seg.utils.embedding_extractor import EmbeddingExtractor
 
 if torch.cuda.is_available():
     device = "cuda"
-elif torch.backends.mps.is_available():
-    device = "mps"
 else:
     device = "cpu"
 
@@ -122,6 +120,7 @@ def process_frame(deva: DEVAInferenceCore,
                   image_np: np.ndarray = None,
                   extractor: EmbeddingExtractor = None,
                   image_feature_store: ImageFeatureStore = None,
+                  keyframe_selection: str = 'first'
                   ) -> None:
     # image_np, if given, should be in RGB
     if image_np is None:
@@ -174,7 +173,7 @@ def process_frame(deva: DEVAInferenceCore,
                 this_image_np = deva.frame_buffer[0].image_np
                 
                 _, mask, new_segments_info = deva.vote_in_temporary_buffer(
-                    keyframe_selection='first'
+                    keyframe_selection=keyframe_selection
                 )
                 prob = deva.incorporate_detection(this_image,
                                                   mask,
@@ -249,6 +248,7 @@ if __name__ == '__main__':
     Arguments loading
     """
     parser = ArgumentParser()
+    parser.add_argument("--video_name", type=str, required=True, help="Save folder of the video")
     add_custom_eval_args(parser)
     add_common_eval_args(parser)
     add_ext_eval_args(parser)
@@ -257,6 +257,7 @@ if __name__ == '__main__':
     yolo_model = YOLO("seg/yolo11n-seg-finetune.pt")
     # sam_model = get_sam_model(cfg, 'cuda')
     extractor = EmbeddingExtractor(yolo_model)
+    keyframe_selection = args.keyframe_selection
     """
     Temporal setting
     """
@@ -288,7 +289,8 @@ if __name__ == '__main__':
         for ti, (frame, im_path) in enumerate(tqdm(loader)):
             process_frame(deva, yolo_model, im_path, result_saver, ti,
                           image_np=frame, extractor=extractor,
-                          image_feature_store=image_feature_store
+                          image_feature_store=image_feature_store,
+                          keyframe_selection=keyframe_selection
                           )
         flush_buffer(deva, result_saver)
     result_saver.end()

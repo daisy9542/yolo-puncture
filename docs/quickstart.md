@@ -62,11 +62,11 @@ Windows 使用 `workers=0` 单进程运行避免多进程间共享 Tensor 的动
 在 `yolo11n-seg.pt` 上进行微调：
 
 ```bash
-yolo train data=/home/puncture/datasets/needle-seg/data.yaml model=yolo11n-seg.pt epochs=100 imgsz=1280 device=cuda
+yolo segment train data=/home/puncture/datasets/needle-seg/data.yaml model=yolo11n-seg.pt epochs=100 imgsz=1280 device=cuda
 ```
 
 在 `yolo11x-seg.pt` 上进行微调：
 
 ```bash
-yolo train data=/home/puncture/datasets/needle-seg/data.yaml model=yolo11x-seg.pt epochs=100 imgsz=1280 batch=8 device=cuda
+yolo segment train data=/home/puncture/datasets/needle-seg/data.yaml model=yolo11x-seg.pt epochs=100 imgsz=1280 batch=8 device=cuda
 ```
