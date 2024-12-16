@@ -5,13 +5,13 @@ from tasks.U2Net import U2NET, U2NETP
 import sys
 import os
 
-# 添加yolo_seg模块到搜索目录
+# 添加needle_seg模块到搜索目录
 current_dir = os.path.dirname(os.path.abspath(__file__))
-yolo_seg_dir = os.path.join(current_dir, '../..')
-sys.path.insert(0, yolo_seg_dir)
+needle_seg_dir = os.path.join(current_dir, '../..')
+sys.path.insert(0, needle_seg_dir)
 
 
-from yolo_seg import (
+from needle_seg import (
     numpy2tensor,
 )
 

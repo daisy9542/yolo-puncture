@@ -5,6 +5,8 @@ __all__ = ['get_coord_min_rect_len',
            'get_bi_min_rect_len',
            'get_coord_mask',
            'get_bi_mask',
+           'rle_encoding',
+           'polygon_encoding',
            'create_roi_mask',
            'filter_masks']
 

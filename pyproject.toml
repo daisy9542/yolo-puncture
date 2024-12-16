@@ -19,7 +19,8 @@ dependencies = [
     "PyYAML",
     "pillow",
     "efficientnet_pytorch",
-    "lapx"
+    "lapx",
+    "git+https://github.com/cocodataset/panopticapi.git",
 ]
 
 [project.scripts]

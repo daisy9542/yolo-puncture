@@ -1,6 +1,6 @@
 """
 自动计算指定视频或者目录下所有视频的针梗穿刺速度，并计算误差（如果参考值可用）。
-该文件需要与 `yolo_seg/app.py` 同步。
+该文件需要与 `needle_seg/app.py` 同步。
 """
 import cv2
 import os
@@ -8,13 +8,13 @@ import argparse
 import numpy as np
 
 from ultralytics import YOLO
-from yolo_seg.tasks import (
+from needle_seg.tasks import (
     load_efficient_net,
     predict_and_find_start_inserted,
     load_unet,
     unet_predict,
 )
-from yolo_seg.utils import (
+from needle_seg.utils import (
     get_config,
     get_coord_mask,
     create_roi_mask,

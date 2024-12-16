@@ -285,7 +285,7 @@ if __name__ == '__main__':
     deva.enabled_long_id()
     result_saver = ResultSaver(out_path, cfg["video_name"], dataset='demo', object_manager=deva.object_manager)
     
-    with torch.cuda.amp.autocast(enabled=args.amp):
+    with torch.amp.autocast('cuda', enabled=args.amp):
         for ti, (frame, im_path) in enumerate(tqdm(loader)):
             process_frame(deva, yolo_model, im_path, result_saver, ti,
                           image_np=frame, extractor=extractor,

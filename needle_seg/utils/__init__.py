@@ -6,6 +6,8 @@ from .mask_tools import (
     get_bi_min_rect_len,
     get_coord_mask,
     get_bi_mask,
+    rle_encoding,
+    polygon_encoding,
     create_roi_mask,
     filter_masks
 )
@@ -34,6 +36,8 @@ __all__ = [
     "get_bi_min_rect_len",
     "get_coord_mask",
     "get_bi_mask",
+    'rle_encoding',
+    'polygon_encoding',
     "create_roi_mask",
     "filter_masks",
     "segment_anything",

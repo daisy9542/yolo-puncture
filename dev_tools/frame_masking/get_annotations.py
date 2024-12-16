@@ -6,10 +6,7 @@ import cv2
 import argparse
 import pickle
 from tqdm import tqdm
-from yolo_seg.utils.config import get_config
-from yolo_seg.utils.segment_anything import segment_anything
-from yolo_seg.utils.mask_tools import filter_masks
-from dev_tools.toolbox import polygon_encoding
+from needle_seg.utils import get_config, segment_anything, filter_masks, polygon_encoding
 
 CONFIG = get_config()
 
