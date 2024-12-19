@@ -1,3 +1,6 @@
+"""
+根据视频目录和对应的掩码目录（均拆分为图片），生成 VIPSeg 格式的 jon 文件。
+"""
 import os
 import re
 import cv2
@@ -50,6 +53,14 @@ def process_frame(frame_idx, video_frame, mask_frame, video_name, images_dir, pa
             "iscrowd": 0,
             "segmentation": [segmentation]
         })
+    
+    # 返回包含当前帧信息的字典
+    return {
+        "frame_idx": frame_idx,
+        "segments_info": segments_info,
+        "height": h,
+        "width": w
+    }
 
 
 def create_vipseg_dataset(video_dir, mask_dir, output_dir):
@@ -60,6 +71,11 @@ def create_vipseg_dataset(video_dir, mask_dir, output_dir):
     
     video_files = [f for f in os.listdir(video_dir) if f.lower().endswith('.mp4')]
     video_files = sorted(video_files, key=natural_sort_key)
+    
+    global_json = {
+        "videos": [],
+        "categories": [{"id": 1, "name": "needle", "isthing": 1}]
+    }
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         futures = []
@@ -80,7 +96,15 @@ def create_vipseg_dataset(video_dir, mask_dir, output_dir):
             cap_video = cv2.VideoCapture(video_path)
             cap_mask = cv2.VideoCapture(mask_video_path)
             
-            frame_idx = 0
+            video_info = {
+                "video_id": len(global_json["videos"]) + 1,
+                "file_name": video_name,
+                "height": None,
+                "width": None,
+                "frame_count": 0,
+                "segments_info": []
+            }
+            
             while True:
                 ret_video, video_frame = cap_video.read()
                 ret_mask, mask_frame = cap_mask.read()
@@ -89,7 +113,6 @@ def create_vipseg_dataset(video_dir, mask_dir, output_dir):
                     break
                 
                 if video_frame is None or mask_frame is None:
-                    frame_idx += 1
                     continue
                 
                 if len(mask_frame.shape) == 3:
@@ -99,20 +122,26 @@ def create_vipseg_dataset(video_dir, mask_dir, output_dir):
                 mask_frame[mask_frame <= 100] = 0
                 
                 # 将任务提交给线程池
-                futures.append(executor.submit(process_frame, frame_idx, video_frame, mask_frame, video_name,
-                                               images_dir, panomasks_dir))
+                future = executor.submit(process_frame, video_info["frame_count"], video_frame, mask_frame,
+                                         video_name, images_dir, panomasks_dir)
+                result = future.result()
                 
-                frame_idx += 1
+                # 合并帧数据
+                video_info["frame_count"] += 1
+                video_info["segments_info"].extend(result["segments_info"])
+                if video_info["height"] is None:
+                    video_info["height"] = result["height"]
+                if video_info["width"] is None:
+                    video_info["width"] = result["width"]
             
             cap_video.release()
             cap_mask.release()
-        
-        # 等待所有任务完成
-        for future in concurrent.futures.as_completed(futures):
-            global_json = future.result()
+            
+            # 添加到 global_json
+            global_json["videos"].append(video_info)
     
     # 保存生成的 JSON 文件
-    json_path = os.path.join(output_dir, "panoptic_gt_VIPSeg.json")
+    json_path = os.path.join(output_dir, "panoptic_gt_VIPSeg_orig.json")
     with open(json_path, "w") as f:
         json.dump(global_json, f, indent=4)
     

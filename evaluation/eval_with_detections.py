@@ -118,8 +118,14 @@ def eval_vpq(submit_dir, truth_dir, pan_gt_json_file, num_processes):
         
         gt_pred_split.append(list(zip(gt_js, pred_js, gt_names, pred_names, gt_image_jsons)))
     
+    vpq_list = []
     for nframes in [1, 2, 4, 6, 8, 10, 999]:
-        vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes)
+        vpq, _, _ = vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes)
+        vpq_list.append(vpq)
+    
+    avg_vpq = np.mean(vpq_list)
+    vpq_list.append(avg_vpq)
+    return vpq_list
 
 
 def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
@@ -229,6 +235,8 @@ def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
         f.write(f'AQ_per_seq: {result["AQ_per_seq"]}\n')
         f.write(f'ID_per_seq: {result["ID_per_seq"]}\n')
         f.write(f'Length_per_seq: {result["Length_per_seq"]}\n')
+    
+    return result['STQ'] * 100
 
 
 if __name__ == "__main__":
@@ -240,4 +248,13 @@ if __name__ == "__main__":
     submit_dir = args.submit_dir
     truth_dir = os.path.join(args.dataset_dir, 'panomasksRGB')
     pan_gt_json_file = os.path.join(args.dataset_dir, 'panoptic_gt_VIPSeg_test.json')
-    eval_vpq(args.submit_dir, truth_dir, pan_gt_json_file, args.num_processes)
+    print("Eval STQ:")
+    stq = eval_stq(args.submit_dir, truth_dir, pan_gt_json_file)
+    print("Eval VPQ:")
+    vpq_list = eval_vpq(args.submit_dir, truth_dir, pan_gt_json_file, args.num_processes)
+    
+    res = vpq_list
+    res.append(stq)
+    with open(os.path.join(submit_dir, 'simple.txt'), 'w') as f:
+        for val in res:
+            f.write(f'{val:.1f}|')
