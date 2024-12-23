@@ -20,7 +20,7 @@ def read_im(path):
     return np.array(Image.open(path))
 
 
-def vpq_compute_single_core(categories, nframes, gt_pred_set):
+def vpq_compute_single_core(nframes, gt_pred_set):
     OFFSET = 256 * 256 * 256
     vpq_stat = PQStat()
     
@@ -57,7 +57,8 @@ def vpq_compute_single_core(categories, nframes, gt_pred_set):
             union = np.sum(vid_pan_gt == gt_id) + np.sum(vid_pan_pred == pred_id) - intersection
             iou = intersection / union
             
-            if iou > 0.5:  # 匹配成功
+            # if iou > 0.5:  # 匹配成功
+            if iou > 0.1:
                 vpq_stat[1].tp += 1
                 vpq_stat[1].iou += iou
                 gt_matched.add(gt_id)
@@ -69,11 +70,11 @@ def vpq_compute_single_core(categories, nframes, gt_pred_set):
     return vpq_stat
 
 
-def vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes):
+def vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes, prefix):
     vpq_stat = PQStat()
     
     with mp.Pool(num_processes) as p:
-        for tmp in tqdm(p.imap(partial(vpq_compute_single_core, categories, nframes), gt_pred_split),
+        for tmp in tqdm(p.imap(partial(vpq_compute_single_core, nframes), gt_pred_split),
                         total=len(gt_pred_split)):
             vpq_stat += tmp
     
@@ -81,9 +82,9 @@ def vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes):
     vpq_all = 100 * metrics['pq']
     sq = 100 * metrics['sq']
     rq = 100 * metrics['rq']
-    print(f"{nframes}-frame: PQ: {vpq_all:.2f}, SQ: {sq:.2f}, RQ: {rq:.2f}")
+    print(f"{prefix}{nframes}-frame: PQ: {vpq_all:.2f}, SQ: {sq:.2f}, RQ: {rq:.2f}")
     
-    save_name = os.path.join(output_dir, f'vpq_{nframes}.txt')
+    save_name = os.path.join(output_dir, f'{prefix}vpq_{nframes}.txt')
     with open(save_name, 'w') as f:
         f.write(f'VPQ: {vpq_all:.2f}\n')
         f.write(f'SQ: {sq:.2f}\n')
@@ -91,13 +92,11 @@ def vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes):
     return vpq_all, sq, rq
 
 
-def eval_vpq(submit_dir, truth_dir, pan_gt_json_file, num_processes):
+def eval_vpq(submit_dir, truth_dir, pan_gt_json_file, num_processes, pred_type, pred_jsons, gt_jsons):
     output_dir = submit_dir
+    prefix = "deva_" if pred_type == "deva_pred" else "pan_"
     
-    with open(os.path.join(submit_dir, 'pred.json'), 'r') as f:
-        pred_jsons = json.load(f)
-    with open(pan_gt_json_file, 'r') as f:
-        gt_jsons = json.load(f)
+    pred_dir = os.path.join(submit_dir, pred_type)
     
     categories = {1: {'id': 1, 'name': 'instance', 'isthing': 1}}
     pred_annos = pred_jsons['annotations']
@@ -113,14 +112,18 @@ def eval_vpq(submit_dir, truth_dir, pan_gt_json_file, num_processes):
         gt_js = gt_j[video_id]
         pred_js = pred_j[video_id]
         
-        gt_names = [os.path.join(truth_dir, video_id, img_j['file_name']) for img_j in gt_image_jsons]
-        pred_names = [os.path.join(submit_dir, 'pan_pred', video_id, img_j['file_name']) for img_j in gt_image_jsons]
+        if pred_type == "deva_pred":
+            pred_names = [os.path.join(pred_dir, video_id, "Annotations", video_id, img_j['file_name']) for img_j in
+                          gt_image_jsons]
+        else:
+            pred_names = [os.path.join(pred_dir, video_id, img_j['file_name']) for img_j in gt_image_jsons]
         
+        gt_names = [os.path.join(truth_dir, video_id, img_j['file_name']) for img_j in gt_image_jsons]
         gt_pred_split.append(list(zip(gt_js, pred_js, gt_names, pred_names, gt_image_jsons)))
     
     vpq_list = []
     for nframes in [1, 2, 4, 6, 8, 10, 999]:
-        vpq, _, _ = vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes)
+        vpq, _, _ = vpq_compute(gt_pred_split, categories, nframes, output_dir, num_processes, prefix)
         vpq_list.append(vpq)
     
     avg_vpq = np.mean(vpq_list)
@@ -128,13 +131,14 @@ def eval_vpq(submit_dir, truth_dir, pan_gt_json_file, num_processes):
     return vpq_list
 
 
-def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
+def eval_stq(submit_dir, truth_dir, pan_gt_json_file, pred_type):
     output_dir = submit_dir
-    if not os.path.isdir(submit_dir):
-        print("%s doesn't exist" % submit_dir)
-    if os.path.isdir(submit_dir) and os.path.isdir(truth_dir):
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    prefix = "deva_" if pred_type == "deva_pred" else "pan_"
+    
+    pred_dir = os.path.join(submit_dir, pred_type)
+    if not os.path.isdir(pred_dir):
+        print(f"{pred_dir} doesn't exist")
+        return
     
     pan_pred_json_file = os.path.join(submit_dir, 'pred.json')
     with open(pan_pred_json_file, 'r') as f:
@@ -176,10 +180,14 @@ def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
         pred_pans = []
         for imgname_j in gt_image_jsons:
             imgname = imgname_j['file_name']
-            image = np.array(Image.open(os.path.join(submit_dir, 'pan_pred', video_id, imgname)))
-            pred_pans.append(image)
-            image = np.array(Image.open(os.path.join(truth_dir, video_id, imgname)))
-            gt_pans.append(image)
+            if pred_type == "deva_pred":
+                pred_path = os.path.join(pred_dir, video_id, "Annotations", video_id, imgname)
+            else:
+                pred_path = os.path.join(pred_dir, video_id, imgname)
+            gt_path = os.path.join(truth_dir, video_id, imgname)
+            
+            pred_pans.append(np.array(Image.open(pred_path)))
+            gt_pans.append(np.array(Image.open(gt_path)))
         
         for i, (gt_json, pred_json, gt_pan, pred_pan, gt_image_json) in enumerate(
                 list(zip(gt_js, pred_js, gt_pans, pred_pans, gt_image_jsons))):
@@ -199,8 +207,8 @@ def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
             
             prediction_instance = np.zeros_like(pan_pred)
             prediction_semantic = np.zeros_like(pan_pred)
-            prediction_instance[pan_pred != 0] = 1  # 只有一个实例，id 0
-            prediction_semantic[pan_pred != 0] = 1  # 类别1为唯一实例
+            prediction_instance[pred_pan != 0] = 1  # 只有一个实例，id 0
+            prediction_semantic[pred_pan != 0] = 1  # 类别1为唯一实例
             prediction = ((prediction_semantic << bit_shift) + prediction_instance)
             
             # 在调用 update_state 之前确保形状相同
@@ -214,20 +222,16 @@ def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
     
     result = stq_metric.result()
     print('*' * 100)
-    print('STQ : {}'.format(result['STQ']))
-    print('AQ :{}'.format(result['AQ']))
-    print('IoU:{}'.format(result['IoU']))
-    print('STQ_per_seq')
-    print(result['STQ_per_seq'])
-    print('AQ_per_seq')
-    print(result['AQ_per_seq'])
-    print('ID_per_seq')
-    print(result['ID_per_seq'])
-    print('Length_per_seq')
-    print(result['Length_per_seq'])
+    print(f'{prefix}STQ : {result["STQ"]}')
+    print(f'{prefix}AQ : {result["AQ"]}')
+    print(f'{prefix}IoU: {result["IoU"]}')
+    print(f'{prefix}STQ_per_seq: {result["STQ_per_seq"]}')
+    print(f'{prefix}AQ_per_seq: {result["AQ_per_seq"]}')
+    print(f'{prefix}ID_per_seq: {result["ID_per_seq"]}')
+    print(f'{prefix}Length_per_seq: {result["Length_per_seq"]}')
     print('*' * 100)
     
-    with open(os.path.join(submit_dir, 'stq.txt'), 'w') as f:
+    with open(os.path.join(submit_dir, f'{prefix}stq.txt'), 'w') as f:
         f.write(f'STQ: {result["STQ"] * 100:.2f}\n')
         f.write(f'AQ : {result["AQ"] * 100:.2f}\n')
         f.write(f'IoU: {result["IoU"] * 100:.2f}\n')
@@ -236,25 +240,47 @@ def eval_stq(submit_dir, truth_dir, pan_gt_json_file):
         f.write(f'ID_per_seq: {result["ID_per_seq"]}\n')
         f.write(f'Length_per_seq: {result["Length_per_seq"]}\n')
     
-    return result['STQ'] * 100
+    return result["STQ"] * 100
+
+def write_results(file_path, results):
+    with open(file_path, 'w') as f:
+        for val in results:
+            f.write(f'{val:.1f}|')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='VPQ Evaluation')
-    parser.add_argument('--submit_dir', '-i', type=str, required=True, help='Test output directory')
-    parser.add_argument('--dataset_dir', type=str, help='dataset directory.')
-    parser.add_argument('--num_processes', type=int, default=4, help='Number of processes for computation')
+    parser.add_argument('--submit-dir', '-i', type=str, required=True, help='Test output directory')
+    parser.add_argument('--dataset-dir', type=str, default="resources/datasets/needle-seg-full",
+                        help='dataset directory.')
+    parser.add_argument('--num-processes', type=int, default=4, help='Number of processes for computation')
+    parser.add_argument('--pred-type', type=str, default="all",
+                        choices=["pan_pred", "deva_pred", "all"],
+                        help="Choose prediction type: pan_pred, deva_pred, or all")
     args = parser.parse_args()
     submit_dir = args.submit_dir
     truth_dir = os.path.join(args.dataset_dir, 'panomasksRGB')
     pan_gt_json_file = os.path.join(args.dataset_dir, 'panoptic_gt_VIPSeg_test.json')
-    print("Eval STQ:")
-    stq = eval_stq(args.submit_dir, truth_dir, pan_gt_json_file)
-    print("Eval VPQ:")
-    vpq_list = eval_vpq(args.submit_dir, truth_dir, pan_gt_json_file, args.num_processes)
+    with open(os.path.join(submit_dir, 'pred.json'), 'r') as f:
+        pred_jsons = json.load(f)
+    with open(pan_gt_json_file, 'r') as f:
+        gt_jsons = json.load(f)
     
-    res = vpq_list
-    res.append(stq)
-    with open(os.path.join(submit_dir, 'simple.txt'), 'w') as f:
-        for val in res:
-            f.write(f'{val:.1f}|')
+    if args.pred_type in ["pan_pred", "all"]:
+        print("Eval STQ for pan_pred")
+        stq = eval_stq(submit_dir, truth_dir, pan_gt_json_file, "pan_pred")
+        print("Eval VPQ for pan_pred")
+        vpq_list = eval_vpq(submit_dir, truth_dir, pan_gt_json_file, args.num_processes, "pan_pred", pred_jsons, gt_jsons)
+        res = vpq_list
+        res.append(stq)
+        write_results(os.path.join(submit_dir, 'pan_simple.txt'), res)
+    
+    if args.pred_type in ["deva_pred", "all"]:
+        print("Eval STQ for deva_pred")
+        stq = stq_deva = eval_stq(submit_dir, truth_dir, pan_gt_json_file, "deva_pred")
+        print("Eval VPQ for deva_pred")
+        vpq_list = eval_vpq(submit_dir, truth_dir, pan_gt_json_file, args.num_processes, "deva_pred", pred_jsons, gt_jsons)
+        res = vpq_list
+        res.append(stq)
+        write_results(os.path.join(submit_dir, 'deva_simple.txt'), res)
+    

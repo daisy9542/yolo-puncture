@@ -22,8 +22,8 @@ from deva.inference.object_info import ObjectInfo
 from deva.ext.ext_eval_args import add_ext_eval_args, add_auto_default_args
 from deva.utils.tensor_utils import pad_divide_by, unpad
 
-from yolo_seg.utils.video_reader import VideoReader
-from yolo_seg.utils.embedding_extractor import EmbeddingExtractor
+from needle_seg.utils.video_reader import VideoReader
+from needle_seg.utils.embedding_extractor import EmbeddingExtractor
 
 if torch.cuda.is_available():
     device = "cuda"
