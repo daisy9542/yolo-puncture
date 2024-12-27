@@ -7,7 +7,7 @@ import torch.nn as nn
 from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 
-from utils import (get_config, crop_frame)
+from needle_seg.utils import (get_config, crop_frame)
 
 CONFIG = get_config()
 

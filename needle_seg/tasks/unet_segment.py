@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from tasks.U2Net import U2NET, U2NETP
+from needle_seg.tasks.U2Net import U2NET, U2NETP
 
 import sys
 import os
