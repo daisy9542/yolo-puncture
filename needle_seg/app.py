@@ -5,20 +5,11 @@ import numpy as np
 import torch.cuda
 
 from ultralytics import YOLO
-from tasks import (
-    load_efficient_net,
-    predict_and_find_start_inserted,
-    load_unet,
-    unet_predict,
-)
-from utils import (
-    get_config,
-    get_coord_mask,
-    create_roi_mask,
-    get_coord_min_rect_len,
-    crop_frame,
-    gaussian_smoothing,
-)
+
+from needle_seg.utils.config import get_config
+from needle_seg.tasks.needle_clasify import load_efficient_net, predict_and_find_start_inserted
+from needle_seg.utils.mask_tools import get_coord_mask, create_roi_mask, get_coord_min_rect_len
+from needle_seg.utils.speed_tools import gaussian_smoothing
 
 CONFIG = get_config()
 
@@ -37,14 +28,10 @@ else:
 
 def yolo_inference(image, video,
                    yolo_model_id,
-                   unet_seg_model_id,
                    classify_model_id,
                    yolo_conf_threshold,
-                   judge_wnd
-                   ):
+                   judge_wnd):
     model = YOLO(f'{CONFIG.PATH.WEIGHTS_PATH}/{yolo_model_id}')
-    unet_model = load_unet(model_name='u2netp', model_dir=f'{CONFIG.PATH.WEIGHTS_PATH}/{unet_seg_model_id}', device=device)
-
     if image:
         results = model.predict(source=image, conf=yolo_conf_threshold, retina_masks=True, device=device)
         seg_coords = results[0].masks.xy[0]
@@ -66,8 +53,7 @@ def yolo_inference(image, video,
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         output_video_path = tempfile.mktemp(suffix=".mp4")
-        # MP4V, avc1
-        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter.fourcc(*'MP4V'), fps, (frame_width, frame_height))
+        out = cv2.VideoWriter(output_video_path, cv2.VideoWriter.fourcc(*'mp4v'), fps, (frame_width, frame_height))
         
         yolo_pred_xyxy = []  # yolo 预测的目标位置信息
         coord_xys = []  # 实例分割标注数组
@@ -119,18 +105,12 @@ def yolo_inference(image, video,
             frames=frames,
             boxes_list=yolo_pred_xyxy,
             judge_wnd=judge_wnd,
-            batch_size=yolo_batch_size
-        )
-        
-        crop_result = map(crop_frame, frames, yolo_pred_xyxy)
-    
-        
+            batch_size=yolo_batch_size)
         
         last_xyxy = None
         smooth_lens = gaussian_smoothing(lens)
-        for idx, ((cropped_frame, cropped_coord), frame, coord_xy, rect_len, xyxy, cls, prob) in enumerate(
-                zip(crop_result, frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)
-        ):
+        for idx, (frame, coord_xy, rect_len, xyxy, cls, prob) in enumerate(
+                zip(frames, coord_xys, smooth_lens, yolo_pred_xyxy, class_list, prob_list)):
             height, width, _ = frame.shape
             
             if inserted:
@@ -174,20 +154,12 @@ def yolo_inference(image, video,
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} -"
             else:
                 label = f"{idx} {cls} {prob:.2f} {actual_len:.2f} {rect_len:.2f}"
-            # mask = get_coord_mask(frame.shape, coord_xy)
-
-            mask = np.zeros(frame.shape, dtype=np.uint8)
-            print(mask.shape)
-            print(cropped_coord)
-            
-            x_lt, y_lt, x_rd, y_rd = cropped_coord
-            cropped_mask = unet_predict(unet_model, cropped_frame, device=device)
-            
-            mask[y_lt:y_rd, x_lt:x_rd] = cropped_mask
-
+            mask = get_coord_mask(frame.shape, coord_xy)
             roi_mask = create_roi_mask(frame.shape, x1, y1, x2, y2, label)
             combined_frame = cv2.addWeighted(frame, 1, mask, 1, 0)
             combined_frame = cv2.addWeighted(combined_frame, 1, roi_mask, 1, 0)
+            if idx == 170:
+                cv2.imwrite("test.jpg", combined_frame)
             out.write(combined_frame)
         cap.release()
         out.release()
@@ -222,13 +194,6 @@ def app():
                     ],
                     value="seg/yolo11n-seg-finetune.pt",
                 )
-                unet_seg_model_id = gr.Dropdown(
-                    label="UNet Model",
-                    choices=[
-                        "u2netp_finetune_70.pth",
-                    ],
-                    value="u2netp_finetune_70.pth",
-                )
                 classify_model_id = gr.Dropdown(
                     label="Classify Model",
                     choices=[
@@ -241,7 +206,7 @@ def app():
                     minimum=0.0,
                     maximum=1.0,
                     step=0.05,
-                    value=0.9,
+                    value=0.35,
                 )
                 judge_wnd = gr.Slider(
                     label="Window Size for Judging Insert-starting Frame",
@@ -272,34 +237,27 @@ def app():
         
         def run_inference(image, video,
                           yolo_model_id,
-                          unet_seg_model_id,
                           classify_model_id,
                           yolo_conf_threshold,
                           judge_wnd,
-                          input_type
-                          ):
+                          input_type):
             if input_type == "Image":
                 return yolo_inference(image, None,
                                       yolo_model_id,
-                                      unet_seg_model_id,
                                       classify_model_id,
                                       yolo_conf_threshold=yolo_conf_threshold,
-                                      judge_wnd=judge_wnd
-                                      )
+                                      judge_wnd=judge_wnd)
             else:
                 return yolo_inference(None, video,
                                       yolo_model_id,
-                                      unet_seg_model_id,
                                       classify_model_id,
                                       yolo_conf_threshold=yolo_conf_threshold,
-                                      judge_wnd=judge_wnd
-                                      )
+                                      judge_wnd=judge_wnd)
         
         yolo_infer.click(
             fn=run_inference,
             inputs=[image, video,
                     yolo_model_id,
-                    unet_seg_model_id,
                     classify_model_id,
                     yolo_conf_threshold,
                     judge_wnd,
@@ -315,8 +273,7 @@ with gradio_app:
     <h1 style='text-align: center'>
     Puncture Detection
     </h1>
-    """
-    )
+    """)
     with gr.Row():
         with gr.Column():
             app()

@@ -19,7 +19,6 @@ from needle_seg.utils import (
     gaussian_smoothing,
 )
 from needle_seg.vis_prompt.workflow_cuite import process_video_with_yolo_and_cutie
-from needle_seg.vis_prompt.workflow_sam2 import process_video_with_yolo_and_sam2
 
 CONFIG = get_config()
 
@@ -35,8 +34,7 @@ deviations = {}
 def process_video(video_path, yolo_model_path, classify_model_id, judge_wnd):
     print(f"Processing video: {video_path}")
     video_name = os.path.splitext(os.path.basename(video_path))[0]
-    # mask_list = process_video_with_yolo_and_cutie(yolo_model_path, video_path)
-    mask_list = process_video_with_yolo_and_sam2(yolo_model_path, video_path)
+    mask_list = process_video_with_yolo_and_cutie(yolo_model_path, video_path)
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     
