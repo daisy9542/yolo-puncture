@@ -30,9 +30,11 @@ class DEVA(nn.Module):
         self.key_proj = KeyProjection(self.pix_feat_dim, self.key_dim)
 
         self.mask_decoder = MaskDecoder(self.value_dim)
+        if self.reinforce:
+            self.feature_reinforce = FeatureReinforceModule(1, 1)
 
     def aggregate(self, prob: torch.Tensor, dim: int) -> torch.Tensor:
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             prob = prob.float()
             new_prob = torch.cat([torch.prod(1 - prob, dim=dim, keepdim=True), prob],
                                  dim).clamp(1e-7, 1 - 1e-7)
@@ -54,7 +56,7 @@ class DEVA(nn.Module):
                     is_deep_update: bool = True,
                     chunk_size: int = -1) -> (torch.Tensor, torch.Tensor):
         if self.reinforce and yolo_features is not None:
-            ms_features = reinforce_features(yolo_features, masks)
+            ms_features = self.feature_reinforce.forward(yolo_features, masks, list(ms_features))
         g16, h16 = self.mask_encoder(image,
                                      ms_features,
                                      h,

@@ -17,6 +17,7 @@ from deva.utils.tensor_utils import pad_divide_by, unpad
 import numpy as np
 
 import pulp
+
 try:
     from gurobipy import GRB
     import gurobipy as gp
@@ -85,7 +86,8 @@ def find_consensus_auto_association(frames: List[FrameInfo],
                                     *,
                                     network: DEVA,
                                     store: ImageFeatureStore,
-                                    config: Dict) -> (int, torch.Tensor, List[ObjectInfo]):
+                                    config: Dict,
+                                    current_ti: int) -> Tuple[int, torch.Tensor, List[ObjectInfo]]:
     global use_gurobi
 
     time_indices = [f.ti for f in frames]
@@ -137,9 +139,19 @@ def find_consensus_auto_association(frames: List[FrameInfo],
         keyframe_i = 0
     elif keyframe_selection == 'middle':
         keyframe_i = (len(time_indices) + 1) // 2
+        for i, frame in enumerate(frames):
+            if frame.ti == current_ti:
+                keyframe_i = i
+                break
     elif keyframe_selection == 'score':
-        keyframe_i = None
-        raise NotImplementedError
+        frame_scores = []
+        for i, this_seg_info in enumerate(segments_info):
+            if not this_seg_info:
+                frame_scores.append(0)
+                continue
+            total_score = sum([np.mean(seg_info.scores) for seg_info in this_seg_info])
+            frame_scores.append(total_score)
+        keyframe_i = np.argmax(frame_scores)
     else:
         raise NotImplementedError
 

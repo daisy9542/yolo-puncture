@@ -1,3 +1,6 @@
+from .helper import (
+    parse_video_range,
+)
 from .config import (
     get_config,
 )
@@ -50,4 +53,5 @@ __all__ = [
     "crop_frame",
     "VideoReader",
     "sort_key",
+    "parse_video_range",
 ]

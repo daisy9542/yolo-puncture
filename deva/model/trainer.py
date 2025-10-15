@@ -84,7 +84,7 @@ class Trainer:
         num_objects = first_frame_gt.shape[2]
         selector = data['selector'].unsqueeze(2).unsqueeze(2)
 
-        with torch.cuda.amp.autocast(enabled=self.config['amp']):
+        with torch.amp.autocast('cuda', enabled=self.config['amp']):
             # filler_one = torch.zeros(1, dtype=torch.int64)
 
             ms_features, feat = self.DEVA('encode_image', frames[:, 0])

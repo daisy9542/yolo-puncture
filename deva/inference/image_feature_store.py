@@ -35,7 +35,9 @@ class ImageFeatureStore:
         
         return self._store[index][0]
     
-    def get_yolo_features(self, index) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_yolo_features(self, index) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        if index not in self._yolo_store:
+            return None
         return self._yolo_store[index]
     
     def get_key(self, index, image) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

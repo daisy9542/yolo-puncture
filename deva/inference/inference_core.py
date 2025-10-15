@@ -137,7 +137,8 @@ class DEVAInferenceCore:
             network=self.network,
             store=self.image_feature_store,
             config=self.config,
-            keyframe_selection=keyframe_selection
+            keyframe_selection=keyframe_selection,
+            current_ti=self.curr_ti,
         )
         
         return projected_ti, projected_mask, projected_info

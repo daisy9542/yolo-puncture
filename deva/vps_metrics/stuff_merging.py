@@ -97,7 +97,7 @@ def merge_stuff(input_path, output_path):
     for out_vid_ann in tqdm(pool.imap(
             partial(process_single_video, input_path=input_path, output_path=output_path),
             annotations),
-                                   max_value=len(annotations)):
+                                   total=len(annotations)):
         output_annotations.append(out_vid_ann)
 
     output_json = {'annotations': output_annotations}

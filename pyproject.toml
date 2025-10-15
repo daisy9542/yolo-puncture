@@ -20,7 +20,12 @@ dependencies = [
     "pillow",
     "efficientnet_pytorch",
     "lapx",
-    "git+https://github.com/cocodataset/panopticapi.git",
+    "natsort",
+    "imageio",
+    "segment_anything",
+    "panopticapi@git+https://github.com/cocodataset/panopticapi.git",
+    "cutie@git+https://github.com/hkchengrex/Cutie.git",
+    "sam2@git+https://github.com/facebookresearch/sam2.git",
 ]
 
 [project.scripts]

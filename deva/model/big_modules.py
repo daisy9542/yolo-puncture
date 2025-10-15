@@ -186,7 +186,7 @@ class MaskDecoder(nn.Module):
 
             p8 = self.up_16_8(decoder_features[0], p16)
             p4 = self.up_8_4(decoder_features[1], p8)
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast('cuda', enabled=False):
                 logits = self.pred(F.relu(p4.flatten(start_dim=0, end_dim=1).float()))
 
             if update_sensory:

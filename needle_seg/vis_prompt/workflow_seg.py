@@ -13,7 +13,7 @@ import argparse
 from sam2.build_sam import build_sam2_video_predictor
 
 from needle_seg.vis_prompt.video_top_mask import yolo_top_mask
-from needle_seg.utils import get_config
+from needle_seg.utils import get_config, parse_video_range
 from cutie.inference.inference_core import InferenceCore
 from cutie.model.cutie import CUTIE
 from cutie.inference.utils.args_utils import get_dataset_cfg
@@ -91,8 +91,10 @@ def process_video_with_yolo_and_cutie(yolo_model_path, source, **kwargs):
         binary_mask = processor.output_prob_to_mask(output_prob)
         binary_mask = (binary_mask > 0).to(torch.uint8)
         mask_list.append(binary_mask)
+    mask_list[:first_mask_id + 1] = reversed(mask_list[:first_mask_id + 1])
     cap.release()
     return mask_list
+
 
 # select the device for computation
 if torch.cuda.is_available():
@@ -140,62 +142,113 @@ def process_video_with_yolo_and_sam2(yolo_model_path, source, sam2_model_type='b
     
     return video_segments
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process puncture video')
     parser.add_argument('mode', choices=['cutie', 'sam2'], help='The mode to process the video')
-    parser.add_argument('--video_num', type=int, help='The number of the video to process')
+    parser.add_argument('--video_num', type=parse_video_range, help='The number of the video to process')
     args = parser.parse_args()
     yolo_model_path = f'{CONFIG.PATH.WEIGHTS_PATH}/seg/yolo11l-seg-finetune.pt'
     
     mode = args.mode
-    video_num = args.video_num
-    source = f'{CONFIG.PATH.DATASETS_PATH}/videos/video{video_num}.mp4'
-    
-    # 处理视频并生成二值掩码
-    if mode == 'cutie':
-        binary_masks = process_video_with_yolo_and_cutie(yolo_model_path, source, conf=0.25, top_percent=0.05, device='0')
-    elif mode == 'sam2':
-        binary_masks = process_video_with_yolo_and_sam2(yolo_model_path, source, sam2_model_type='b+')
-    
-    # 保存二值掩码视频
-    mask_video_path = f'./video{video_num}_masks.mp4'
-    rgb_masks = [np.stack([bi_mask.cpu().numpy()] * 3, axis=-1) * 255 for bi_mask in binary_masks]
-    imageio.mimsave(mask_video_path, rgb_masks, fps=30, codec='h264')
-    print(f"二值掩码视频已保存到 {mask_video_path}")
-    
-    # 生成叠加掩码的视频
-    overlay_video_path = f'./video{video_num}_overlay.mp4'
-    
-    # 使用上下文管理器确保读取器和写入器正确关闭
-    with imageio.get_reader(source) as reader, imageio.get_writer(overlay_video_path, fps=30, codec='h264') as writer:
-        alpha = 0.5  # 透明度因子，0.0 完全透明，1.0 完全不透明
-        color = [255, 0, 0]  # 掩码颜色，这里为红色
+    for video_num in args.video_num:
+        source = f'{CONFIG.PATH.DATASETS_PATH}/full-videos/video{video_num}.mp4'
+        print(f"Processing {source}")
         
-        for frame_idx, (frame, mask) in enumerate(zip(reader, binary_masks)):
-            frame = frame.astype(np.uint8)
-            mask_np = mask.cpu().numpy().astype(np.uint8)
+        # 处理视频并生成二值掩码
+        if mode == 'cutie':
+            binary_masks = process_video_with_yolo_and_cutie(
+                yolo_model_path, source, conf=0.25, top_percent=0.05, device='0'
+            )
+        elif mode == 'sam2':
+            binary_masks = process_video_with_yolo_and_sam2(
+                yolo_model_path, source, sam2_model_type='b+'
+            )
+        
+        os.makedirs(f'./workflow/{mode}', exist_ok=True)
+        mask_video_path = f'./workflow/{mode}/video{video_num}_masks.mp4'
+        
+        # 使用 OpenCV 获取原视频的帧率
+        cap = cv2.VideoCapture(source)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 或者尝试 'X264'
+        
+        # 将二值掩码转换为 RGB 掩码
+        rgb_masks = [np.stack([bi_mask.cpu().numpy()] * 3, axis=-1) * 255 for bi_mask in binary_masks]
+        rgb_masks = [mask.astype(np.uint8) for mask in rgb_masks]
+        
+        if len(rgb_masks) == 0:
+            raise ValueError("没有生成任何掩码！")
+        
+        video_writer = cv2.VideoWriter(mask_video_path, fourcc, fps, (width, height))
+        
+        # 写入每一帧到视频
+        for frame in rgb_masks:
+            video_writer.write(frame)
+        
+        video_writer.release()
+        print(f"二值掩码视频已保存到 {mask_video_path}")
+        
+        # 生成叠加掩码的视频
+        overlay_video_path = f'./workflow/{mode}/video{video_num}_overlay.mp4'
+        
+        video_writer = cv2.VideoWriter(overlay_video_path, fourcc, fps, (width, height))
+        
+        alpha = 0.5  # 透明度因子
+        color = [255, 0, 0]  # 红色
+        
+        frame_idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
             
-            # 确保掩码是二值的（0 或 1）
+            if frame_idx >= len(binary_masks):
+                # 掩码已经用完，可以 break，也可以按需求处理
+                break
+            
+            # 取对应帧的掩码（请确保 binary_masks 的长度与视频帧数匹配）
+            mask = binary_masks[frame_idx]
+            
+            # 转为 uint8 类型
+            frame = frame.astype(np.uint8)
+            # 如果 frame 为灰度图，则转换为三通道图像
+            if frame.ndim == 2:
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+            elif frame.ndim == 3 and frame.shape[2] != 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+            
+            # 获取 mask 的 numpy 数组，并二值化
+            mask_np = mask.cpu().numpy().astype(np.uint8)
+            # 如果 mask 是三通道，取第一通道
+            if mask_np.ndim == 3:
+                mask_np = mask_np[..., 0]
             mask_np = (mask_np > 0).astype(np.uint8)
             
-            # 创建彩色掩码
-            colored_mask = np.zeros_like(frame)
-            colored_mask[:, :, 0] = color[0]  # 红色通道
-            colored_mask[:, :, 1] = color[1]  # 绿色通道
-            colored_mask[:, :, 2] = color[2]  # 蓝色通道
+            # 保证 mask 尺寸与 frame 相同
+            if mask_np.shape != frame.shape[:2]:
+                mask_np = cv2.resize(mask_np, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_NEAREST)
             
-            # 扩展掩码到3个通道
-            mask_3c = np.stack([mask_np]*3, axis=-1)
+            # 创建与 frame 大小相同的彩色掩码
+            colored_mask = np.full(frame.shape, color, dtype=np.uint8)
             
-            # 叠加掩码到原始帧
-            overlaid_frame = frame.copy()
-            overlaid_frame[mask_3c > 0] = (
-                frame[mask_3c > 0] * (1 - alpha) + colored_mask[mask_3c > 0] * alpha
-            ).astype(np.uint8)
+            # 利用 cv2.addWeighted 计算整个帧的混合效果
+            blended = cv2.addWeighted(frame, 1 - alpha, colored_mask, alpha, 0)
             
-            writer.append_data(overlaid_frame)
+            # 将 mask 扩展到 (H, W, 1) 以便广播
+            mask_expanded = mask_np[..., None].astype(bool)
             
-            if (frame_idx + 1) % 100 == 0:
-                print(f"已处理 {frame_idx + 1} 帧")
-    
-    print(f"叠加掩码视频已保存到 {overlay_video_path}")
+            # 根据 mask 条件选取 blended 或原始 frame 像素
+            overlaid_frame = np.where(mask_expanded, blended, frame)
+            overlaid_frame = np.ascontiguousarray(overlaid_frame, dtype=np.uint8)
+            
+            # 写入视频帧
+            video_writer.write(overlaid_frame)
+            frame_idx += 1
+        
+        cap.release()
+        video_writer.release()
+        
+        print(f"叠加掩码视频已保存到 {overlay_video_path}")
